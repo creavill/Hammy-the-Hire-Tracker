@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Job Tracker Capture",
+  "version": "1.0",
+  "description": "Capture job listings from any page and send to Job Tracker",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["http://localhost:5000/*"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
