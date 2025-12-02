@@ -103,7 +103,10 @@ def clean_job_url(url: str) -> str:
 
 # ============== Database ==============
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    
+    # Enable WAL mode for better concurrency
+    conn.execute("PRAGMA journal_mode=WAL")
     
     # Create tables if they don't exist
     conn.execute('''
@@ -168,7 +171,7 @@ def init_db():
     conn.close()
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)  # Wait up to 30s for lock
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -1177,12 +1180,22 @@ DASHBOARD_HTML = '''
         
         async function scanWWR() {
             const btn = event.target;
+            const originalText = btn.textContent;
             btn.disabled = true;
-            btn.textContent = 'Scanning...';
-            await fetch('/api/wwr', {method: 'POST'});
-            await loadJobs();
+            btn.textContent = 'Scanning WWR...';
+            
+            try {
+                await fetch('/api/wwr', {method: 'POST'});
+                // Poll for updates
+                setTimeout(loadJobs, 3000);
+                setTimeout(loadJobs, 10000);
+                setTimeout(loadJobs, 20000);
+            } catch (err) {
+                console.error('WWR scan failed:', err);
+            }
+            
             btn.disabled = false;
-            btn.textContent = '🌐 Scan WWR';
+            btn.textContent = originalText;
         }
         
         async function scanEmails() {
@@ -1570,7 +1583,10 @@ Return ONLY valid JSON:
 @app.route('/api/wwr', methods=['POST'])
 def api_scan_wwr():
     """Scan WWR with AI filtering."""
+    print("🌐 Starting WWR scan...")
     jobs = fetch_wwr_jobs()
+    print(f"📥 Fetched {len(jobs)} jobs from RSS feeds")
+    
     resume_text = load_resumes()
     
     if not resume_text:
@@ -1582,10 +1598,13 @@ def api_scan_wwr():
     duplicate_count = 0
     
     try:
-        for job in jobs:
+        for i, job in enumerate(jobs, 1):
+            print(f"Processing {i}/{len(jobs)}: {job['title'][:50]}...")
+            
             existing = conn.execute("SELECT 1 FROM jobs WHERE job_id = ?", (job['job_id'],)).fetchone()
             if existing:
                 duplicate_count += 1
+                print(f"  ⏭️  Duplicate")
                 continue
             
             keep, baseline_score, reason = ai_filter_and_score(job, resume_text)
@@ -1598,8 +1617,9 @@ def api_scan_wwr():
                 ''', (job['job_id'], job['title'], job['company'], job['location'], 
                       job['url'], job['source'], job.get('description', job['raw_text']), baseline_score,
                       job['created_at'], datetime.now().isoformat(), job.get('email_date', job['created_at'])))
-                conn.commit()  # Commit immediately
+                conn.commit()
                 new_count += 1
+                print(f"  ✓ Kept - Score {baseline_score}")
             else:
                 conn.execute('''
                     INSERT INTO jobs (job_id, title, company, location, url, source, raw_text, 
@@ -1608,11 +1628,13 @@ def api_scan_wwr():
                 ''', (job['job_id'], job['title'], job['company'], job['location'], 
                       job['url'], job['source'], job.get('description', job['raw_text']), baseline_score,
                       job['created_at'], datetime.now().isoformat(), job.get('email_date', job['created_at']), reason))
-                conn.commit()  # Commit immediately
+                conn.commit()
                 filtered_count += 1
+                print(f"  ✗ Filtered - {reason[:50]}")
     finally:
         conn.close()
     
+    print(f"\n✅ WWR Scan Complete: {new_count} new, {filtered_count} filtered, {duplicate_count} duplicates")
     return jsonify({'found': len(jobs), 'new': new_count, 'filtered': filtered_count, 'duplicates': duplicate_count})
 
 @app.route('/api/generate-cover-letter', methods=['POST'])
