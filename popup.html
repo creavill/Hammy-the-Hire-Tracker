@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      width: 320px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+    }
+    h1 {
+      font-size: 18px;
+      margin: 0 0 16px 0;
+      color: #1a1a1a;
+    }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: #333;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-size: 13px;
+    }
+    textarea {
+      height: 100px;
+      resize: vertical;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    button:disabled {
+      background: #93c5fd;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: #6b7280;
+      margin-top: 4px;
+    }
+    button.secondary:hover {
+      background: #4b5563;
+    }
+    .status {
+      margin-top: 12px;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 13px;
+      display: none;
+    }
+    .status.success {
+      display: block;
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .status.error {
+      display: block;
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .auto-detected {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+  <h1>📋 Capture Job</h1>
+  
+  <div class="form-group">
+    <label>Job Title *</label>
+    <input type="text" id="title" placeholder="Senior Software Engineer">
+  </div>
+  
+  <div class="form-group">
+    <label>Company</label>
+    <input type="text" id="company" placeholder="Acme Corp">
+  </div>
+  
+  <div class="form-group">
+    <label>Location</label>
+    <input type="text" id="location" placeholder="Remote" value="Remote">
+  </div>
+  
+  <div class="form-group">
+    <label>URL</label>
+    <input type="text" id="url" readonly>
+    <div class="auto-detected">Auto-detected from current tab</div>
+  </div>
+  
+  <div class="form-group">
+    <label>Description</label>
+    <textarea id="description" placeholder="Paste or auto-extract job description..."></textarea>
+  </div>
+  
+  <button id="extractBtn" class="secondary">🔍 Extract from Page</button>
+  <button id="captureBtn">💾 Save to Job Tracker</button>
+  
+  <div id="status" class="status"></div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

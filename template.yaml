@@ -1,0 +1,400 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Job Tracker - Personal job application tracking with AI analysis
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  
+  # Future: Add UserPoolId param for multi-tenant
+  OwnerEmail:
+    Type: String
+    Description: Your email for notifications
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 512
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        JOBS_TABLE: !Ref JobsTable
+        RESUMES_BUCKET: !Ref ResumesBucket
+        # Future: USER_POOL_ID for multi-tenant
+
+Resources:
+  #############################################
+  # DynamoDB - Jobs & Applications
+  #############################################
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub job-tracker-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        # user_id included for future multi-tenant
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: job_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: score
+          AttributeType: N
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: job_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # Query by status (applied, interested, passed)
+        - IndexName: status-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Query by score (top matches first)
+        - IndexName: score-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: score
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Query by date
+        - IndexName: date-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  #############################################
+  # S3 - Resumes, Cover Letters, Static Site
+  #############################################
+  ResumesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub job-tracker-data-${AWS::AccountId}-${Environment}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  StaticSiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub job-tracker-site-${AWS::AccountId}-${Environment}
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+
+  StaticSiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StaticSiteBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${StaticSiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+  #############################################
+  # CloudFront Distribution
+  #############################################
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt StaticSiteBucket.RegionalDomainName
+            OriginAccessControlId: !Ref CloudFrontOAC
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+          - Id: ApiOrigin
+            DomainName: !Sub ${JobsApi}.execute-api.${AWS::Region}.amazonaws.com
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
+          Compress: true
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: ApiOrigin
+            ViewerProtocolPolicy: https-only
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac  # AllViewerExceptHostHeader
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        PriceClass: PriceClass_100
+
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub job-tracker-oac-${Environment}
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  #############################################
+  # Secrets Manager - Gmail & Anthropic
+  #############################################
+  GmailCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub job-tracker/gmail-credentials-${Environment}
+      Description: Gmail OAuth credentials and tokens
+
+  AnthropicApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub job-tracker/anthropic-api-key-${Environment}
+      Description: Anthropic API key for Claude
+
+  #############################################
+  # Lambda Functions
+  #############################################
+  
+  # Shared Lambda Layer
+  SharedLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: job-tracker-shared
+      ContentUri: ../src/layers/shared/
+      CompatibleRuntimes:
+        - python3.12
+    Metadata:
+      BuildMethod: python3.12
+
+  # Email Scanner - Runs on schedule
+  EmailScannerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub job-tracker-email-scanner-${Environment}
+      CodeUri: ../src/functions/email_scanner/
+      Handler: handler.lambda_handler
+      Layers:
+        - !Ref SharedLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3ReadPolicy:
+            BucketName: !Ref ResumesBucket
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource:
+                - !Ref GmailCredentialsSecret
+                - !Ref AnthropicApiKeySecret
+      Environment:
+        Variables:
+          GMAIL_SECRET_ARN: !Ref GmailCredentialsSecret
+          ANTHROPIC_SECRET_ARN: !Ref AnthropicApiKeySecret
+          DEFAULT_USER_ID: default  # Single user for now
+      Events:
+        ScheduleEvent:
+          Type: Schedule
+          Properties:
+            Schedule: rate(6 hours)  # Scan every 6 hours
+            Enabled: true
+
+  # Job Analyzer - Analyzes individual jobs
+  JobAnalyzerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub job-tracker-analyzer-${Environment}
+      CodeUri: ../src/functions/job_analyzer/
+      Handler: handler.lambda_handler
+      Timeout: 120
+      Layers:
+        - !Ref SharedLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3ReadPolicy:
+            BucketName: !Ref ResumesBucket
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource:
+                - !Ref AnthropicApiKeySecret
+      Environment:
+        Variables:
+          ANTHROPIC_SECRET_ARN: !Ref AnthropicApiKeySecret
+
+  # Cover Letter Generator
+  CoverLetterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub job-tracker-cover-letter-${Environment}
+      CodeUri: ../src/functions/cover_letter/
+      Handler: handler.lambda_handler
+      Timeout: 120
+      Layers:
+        - !Ref SharedLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3CrudPolicy:
+            BucketName: !Ref ResumesBucket
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource:
+                - !Ref AnthropicApiKeySecret
+      Environment:
+        Variables:
+          ANTHROPIC_SECRET_ARN: !Ref AnthropicApiKeySecret
+
+  # API Handler - CRUD for jobs
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub job-tracker-api-${Environment}
+      CodeUri: ../src/functions/api/
+      Handler: handler.lambda_handler
+      Layers:
+        - !Ref SharedLayer
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3CrudPolicy:
+            BucketName: !Ref ResumesBucket
+      Environment:
+        Variables:
+          DEFAULT_USER_ID: default
+      Events:
+        GetJobs:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JobsApi
+            Path: /api/jobs
+            Method: GET
+        GetJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JobsApi
+            Path: /api/jobs/{job_id}
+            Method: GET
+        UpdateJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JobsApi
+            Path: /api/jobs/{job_id}
+            Method: PATCH
+        GenerateCoverLetter:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JobsApi
+            Path: /api/jobs/{job_id}/cover-letter
+            Method: POST
+        TriggerScan:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JobsApi
+            Path: /api/scan
+            Method: POST
+
+  #############################################
+  # API Gateway
+  #############################################
+  JobsApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub job-tracker-api-${Environment}
+      StageName: !Ref Environment
+      Cors:
+        AllowOrigin: "'*'"
+        AllowMethods: "'GET,POST,PATCH,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+      # Future: Add Cognito authorizer here
+      # Auth:
+      #   DefaultAuthorizer: CognitoAuthorizer
+      #   Authorizers:
+      #     CognitoAuthorizer:
+      #       UserPoolArn: !GetAtt UserPool.Arn
+
+  #############################################
+  # Future: Cognito User Pool (commented out)
+  #############################################
+  # UserPool:
+  #   Type: AWS::Cognito::UserPool
+  #   Properties:
+  #     UserPoolName: !Sub job-tracker-users-${Environment}
+  #     MfaConfiguration: OPTIONAL
+  #     EnabledMfas:
+  #       - SOFTWARE_TOKEN_MFA
+  #     Policies:
+  #       PasswordPolicy:
+  #         MinimumLength: 12
+  #         RequireUppercase: true
+  #         RequireLowercase: true
+  #         RequireNumbers: true
+  #         RequireSymbols: true
+
+Outputs:
+  CloudFrontUrl:
+    Description: Dashboard URL
+    Value: !Sub https://${CloudFrontDistribution.DomainName}
+  
+  ApiUrl:
+    Description: API endpoint
+    Value: !Sub https://${JobsApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+  
+  JobsTableName:
+    Description: DynamoDB table name
+    Value: !Ref JobsTable
+  
+  ResumesBucketName:
+    Description: S3 bucket for resumes and cover letters
+    Value: !Ref ResumesBucket
+  
+  GmailSecretArn:
+    Description: ARN for Gmail credentials secret (add your OAuth tokens here)
+    Value: !Ref GmailCredentialsSecret
+  
+  AnthropicSecretArn:
+    Description: ARN for Anthropic API key secret
+    Value: !Ref AnthropicApiKeySecret

@@ -1,0 +1,17 @@
+# Job Alert Analyzer Dependencies
+
+# Google Gmail API
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+google-api-python-client>=2.0.0
+
+# Anthropic Claude API
+anthropic>=0.40.0
+
+# HTML Parsing
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# Optional: For enhanced email parsing
+html2text>=2024.0.0
