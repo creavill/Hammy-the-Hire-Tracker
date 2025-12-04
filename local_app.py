@@ -2462,6 +2462,7 @@ def get_external_applications():
     Get all external applications with optional filtering.
     Query params: status, company, source
     """
+    print(f"[Backend] GET /api/external-applications - Query params: {dict(request.args)}")
     conn = get_db()
 
     # Build query with optional filters
@@ -2485,6 +2486,7 @@ def get_external_applications():
     applications = [dict(row) for row in conn.execute(query, params).fetchall()]
     conn.close()
 
+    print(f"[Backend] Returning {len(applications)} external applications")
     return jsonify({'applications': applications})
 
 @app.route('/api/external-applications', methods=['POST'])
@@ -2494,15 +2496,18 @@ def create_external_application():
     Required fields: title, company, applied_date, source
     """
     data = request.json
+    print(f"[Backend] POST /api/external-applications - Received data: {data}")
 
     # Validate required fields
     required_fields = ['title', 'company', 'applied_date', 'source']
     for field in required_fields:
         if not data.get(field):
+            print(f"[Backend] Validation failed: {field} is missing")
             return jsonify({'error': f'{field} is required'}), 400
 
     # Generate unique ID
     app_id = str(uuid.uuid4())[:16]
+    print(f"[Backend] Generated app_id: {app_id}")
 
     # Get optional fields
     job_id = data.get('job_id')
@@ -2518,20 +2523,25 @@ def create_external_application():
 
     now = datetime.now().isoformat()
 
-    conn = get_db()
-    conn.execute('''
-        INSERT INTO external_applications (
-            app_id, job_id, title, company, location, url, source,
-            application_method, applied_date, contact_name, contact_email,
-            status, follow_up_date, notes, created_at, updated_at, is_linked_to_job
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        app_id, job_id, data['title'], data['company'], location, url, data['source'],
-        application_method, data['applied_date'], contact_name, contact_email,
-        status, follow_up_date, notes, now, now, is_linked_to_job
-    ))
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_db()
+        conn.execute('''
+            INSERT INTO external_applications (
+                app_id, job_id, title, company, location, url, source,
+                application_method, applied_date, contact_name, contact_email,
+                status, follow_up_date, notes, created_at, updated_at, is_linked_to_job
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            app_id, job_id, data['title'], data['company'], location, url, data['source'],
+            application_method, data['applied_date'], contact_name, contact_email,
+            status, follow_up_date, notes, now, now, is_linked_to_job
+        ))
+        conn.commit()
+        conn.close()
+        print(f"[Backend] Successfully inserted external application: {data['title']} at {data['company']}")
+    except Exception as e:
+        print(f"[Backend] Database error: {str(e)}")
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
 
     return jsonify({'success': True, 'app_id': app_id})
 

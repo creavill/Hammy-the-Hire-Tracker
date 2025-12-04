@@ -310,19 +310,35 @@ export default function App() {
   }, [filter.status, filter.minScore]);
   
   const fetchExternalApps = useCallback(async () => {
+    console.log('[Frontend] Fetching external applications...');
     try {
       const res = await fetch(`${API_BASE}/external-applications`);
       const data = await res.json();
+      console.log(`[Frontend] Received ${data.applications?.length || 0} external applications`);
       setExternalApps(data.applications || []);
     } catch (err) {
-      console.error('Failed to fetch external applications:', err);
+      console.error('[Frontend] Failed to fetch external applications:', err);
     }
   }, []);
 
   useEffect(() => {
     fetchJobs();
     fetchExternalApps();
-  }, [fetchJobs, fetchExternalApps]);
+
+    // Poll for external applications every 5 seconds to catch updates from extension
+    console.log('[Frontend] Setting up polling for external applications (5s interval)');
+    const pollInterval = setInterval(() => {
+      if (activeView === 'external') {
+        console.log('[Frontend] Polling for external applications updates...');
+        fetchExternalApps();
+      }
+    }, 5000);
+
+    return () => {
+      console.log('[Frontend] Cleaning up polling interval');
+      clearInterval(pollInterval);
+    };
+  }, [fetchJobs, fetchExternalApps, activeView]);
 
   const handleScan = async () => {
     setScanning(true);
@@ -363,25 +379,28 @@ export default function App() {
   };
 
   const handleExternalStatusChange = async (appId, newStatus) => {
+    console.log(`[Frontend] Updating external application ${appId} status to: ${newStatus}`);
     try {
       await fetch(`${API_BASE}/external-applications/${appId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
+      console.log('[Frontend] Status update successful, refreshing list...');
       fetchExternalApps();
     } catch (err) {
-      console.error('External app status update failed:', err);
+      console.error('[Frontend] External app status update failed:', err);
     }
   };
 
   const handleDeleteExternal = async (appId) => {
-    if (!confirm('Delete this external application?')) return;
+    console.log(`[Frontend] Deleting external application: ${appId}`);
     try {
       await fetch(`${API_BASE}/external-applications/${appId}`, { method: 'DELETE' });
+      console.log('[Frontend] Delete successful, refreshing list...');
       fetchExternalApps();
     } catch (err) {
-      console.error('Delete failed:', err);
+      console.error('[Frontend] Delete failed:', err);
     }
   };
 
