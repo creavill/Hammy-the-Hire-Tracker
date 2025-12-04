@@ -300,6 +300,8 @@ async function generateAnswer(questionType) {
 
 // EXTERNAL APPLICATION TAB
 async function saveExternalApplication() {
+  console.log('[Extension] saveExternalApplication called');
+
   const title = document.getElementById('ext-title').value.trim();
   const company = document.getElementById('ext-company').value.trim();
   const location = document.getElementById('ext-location').value.trim();
@@ -311,20 +313,26 @@ async function saveExternalApplication() {
   const contactEmail = document.getElementById('ext-contact-email').value.trim();
   const notes = document.getElementById('ext-notes').value.trim();
 
+  console.log('[Extension] Form data:', { title, company, source, appliedDate });
+
   // Validate required fields
   if (!title) {
+    console.warn('[Extension] Validation failed: title missing');
     showStatus('Job title is required', 'error', 'external-result');
     return;
   }
   if (!company) {
+    console.warn('[Extension] Validation failed: company missing');
     showStatus('Company name is required', 'error', 'external-result');
     return;
   }
   if (!source) {
+    console.warn('[Extension] Validation failed: source missing');
     showStatus('Application source is required', 'error', 'external-result');
     return;
   }
   if (!appliedDate) {
+    console.warn('[Extension] Validation failed: applied date missing');
     showStatus('Applied date is required', 'error', 'external-result');
     return;
   }
@@ -333,28 +341,39 @@ async function saveExternalApplication() {
   btn.disabled = true;
   btn.textContent = '💾 Saving...';
 
+  const payload = {
+    title,
+    company,
+    location,
+    url,
+    source,
+    application_method: method,
+    applied_date: appliedDate,
+    contact_name: contactName,
+    contact_email: contactEmail,
+    notes
+  };
+
+  console.log('[Extension] Sending POST to:', EXTERNAL_APP_URL);
+  console.log('[Extension] Payload:', payload);
+
   try {
     const response = await fetch(EXTERNAL_APP_URL, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        title,
-        company,
-        location,
-        url,
-        source,
-        application_method: method,
-        applied_date: appliedDate,
-        contact_name: contactName,
-        contact_email: contactEmail,
-        notes
-      })
+      body: JSON.stringify(payload)
     });
+
+    console.log('[Extension] Response status:', response.status);
 
     if (!response.ok) {
       const error = await response.json();
+      console.error('[Extension] Save failed:', error);
       throw new Error(error.error || 'Failed to save');
     }
+
+    const result = await response.json();
+    console.log('[Extension] Save successful:', result);
 
     showStatus('✅ External application saved successfully!', 'success', 'external-result');
 
