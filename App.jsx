@@ -62,7 +62,7 @@ function StatusBadge({ status, onChange, statusConfig }) {
   );
 }
 
-function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume, onDelete, expanded, onToggle, onUpdateNotes }) {
+function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume, onDelete, expanded, onToggle, onUpdateNotes, isSelected }) {
   const analysis = job.analysis || {};
   const [loadingRecommendation, setLoadingRecommendation] = useState(false);
   const [notes, setNotes] = useState(job.notes || '');
@@ -99,7 +99,9 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div className={`bg-white rounded-lg shadow-sm border overflow-hidden ${
+      isSelected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+    }`}>
       <div className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
@@ -689,6 +691,8 @@ export default function App() {
     if (saved !== null) return saved === 'true';
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
+  const [selectedJobIndex, setSelectedJobIndex] = useState(0);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
 
   // Update HTML element and localStorage when dark mode changes
   useEffect(() => {
@@ -699,6 +703,66 @@ export default function App() {
     }
     localStorage.setItem('darkMode', darkMode);
   }, [darkMode]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      // Ignore if typing in input/textarea
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      // Only apply shortcuts on discovered jobs view
+      if (activeView !== 'discovered') {
+        if (e.key === '?') setShowShortcutsHelp(true);
+        return;
+      }
+
+      const filteredJobsList = jobs.filter(job => {
+        const matchesSearch = !filter.search ||
+          job.title?.toLowerCase().includes(filter.search.toLowerCase()) ||
+          job.company?.toLowerCase().includes(filter.search.toLowerCase());
+        const matchesStatus = !filter.status || job.status === filter.status;
+        const matchesScore = job.score >= filter.minScore;
+        return matchesSearch && matchesStatus && matchesScore;
+      });
+
+      switch(e.key) {
+        case 'j':
+          e.preventDefault();
+          setSelectedJobIndex(prev => Math.min(prev + 1, filteredJobsList.length - 1));
+          break;
+        case 'k':
+          e.preventDefault();
+          setSelectedJobIndex(prev => Math.max(prev - 1, 0));
+          break;
+        case '/':
+          e.preventDefault();
+          document.querySelector('input[placeholder*="Search"]')?.focus();
+          break;
+        case 'Enter':
+          e.preventDefault();
+          if (filteredJobsList[selectedJobIndex]) {
+            window.open(filteredJobsList[selectedJobIndex].url, '_blank');
+          }
+          break;
+        case 'd':
+          e.preventDefault();
+          if (filteredJobsList[selectedJobIndex] && confirm('Delete this job?')) {
+            handleDeleteJob(filteredJobsList[selectedJobIndex].job_id);
+            setSelectedJobIndex(prev => Math.max(0, Math.min(prev, filteredJobsList.length - 2)));
+          }
+          break;
+        case '?':
+          e.preventDefault();
+          setShowShortcutsHelp(true);
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [activeView, filter, jobs, selectedJobIndex]);
   
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -1303,7 +1367,7 @@ export default function App() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredJobs.map(job => (
+                {filteredJobs.map((job, index) => (
                   <JobCard
                     key={job.job_id}
                     job={job}
@@ -1314,6 +1378,7 @@ export default function App() {
                     onRecommendResume={handleRecommendResume}
                     onDelete={handleDeleteJob}
                     onUpdateNotes={handleUpdateNotes}
+                    isSelected={index === selectedJobIndex}
                   />
                 ))}
               </div>
@@ -2215,6 +2280,56 @@ export default function App() {
           onClose={() => setShowResumeModal(false)}
           onSave={fetchResumes}
         />
+      )}
+
+      {/* Keyboard Shortcuts Help Modal */}
+      {showShortcutsHelp && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">⌨️ Keyboard Shortcuts</h3>
+                <button
+                  onClick={() => setShowShortcutsHelp(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <XCircle size={24} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                  <span className="text-gray-700 dark:text-gray-300">Navigate down</span>
+                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">j</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                  <span className="text-gray-700 dark:text-gray-300">Navigate up</span>
+                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">k</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                  <span className="text-gray-700 dark:text-gray-300">Focus search</span>
+                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">/</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                  <span className="text-gray-700 dark:text-gray-300">Open selected job</span>
+                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">Enter</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                  <span className="text-gray-700 dark:text-gray-300">Delete selected job</span>
+                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">d</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                  <span className="text-gray-700 dark:text-gray-300">Show this help</span>
+                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">?</kbd>
+                </div>
+              </div>
+
+              <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                Shortcuts work on the Discovered Jobs view
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
