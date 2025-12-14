@@ -138,14 +138,15 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
           )}
           
           <div className="flex items-center gap-2 pt-2">
-            <a
-              href={job.url}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(job.url, '_blank', 'width=1200,height=800,left=100,top=100');
+              }}
               className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
             >
               <ExternalLink size={14} /> View Job
-            </a>
+            </button>
 
             {!job.cover_letter && (
               <button

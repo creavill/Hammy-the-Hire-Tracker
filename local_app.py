@@ -86,6 +86,26 @@ WWR_FEEDS = [
 app = Flask(__name__, static_folder='dist/assets', static_url_path='/assets')
 CORS(app)
 
+# ============== Text Cleaning ==============
+def clean_text_field(text):
+    """
+    Thoroughly clean a text field to remove newlines, extra whitespace, and normalize.
+
+    Args:
+        text: Input text string
+
+    Returns:
+        Cleaned text string
+    """
+    if not text:
+        return ""
+    # Replace all newlines and tabs with spaces
+    text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+    # Normalize multiple spaces to single space
+    text = ' '.join(text.split())
+    # Strip leading/trailing whitespace
+    return text.strip()
+
 # ============== URL Cleaning ==============
 def clean_job_url(url: str) -> str:
     """
@@ -449,10 +469,15 @@ def parse_linkedin_jobs(html, email_date):
             lines = [l.strip() for l in text.split('\n') if l.strip()]
             raw_text = ' '.join(lines[:5])[:1000]
         
+        # Final cleanup of all text fields
+        title = clean_text_field(title)
+        company = clean_text_field(company) if company else "Unknown"
+        location = clean_text_field(location)
+
         jobs.append({
             'job_id': generate_job_id(url, title, company),
             'title': title[:200],
-            'company': company[:100] if company else "Unknown",
+            'company': company[:100],
             'location': location[:100],
             'url': url,
             'source': 'linkedin',
@@ -521,12 +546,17 @@ def parse_indeed_jobs(html, email_date):
                     break
             
             raw_text = ' '.join(lines[:6])[:1000]
-        
+
+        # Final cleanup of all text fields
+        title = clean_text_field(title)
+        company = clean_text_field(company) if company else "Unknown"
+        location = clean_text_field(location)
+
         jobs.append({
             'job_id': generate_job_id(url, title, company),
             'title': title[:200],
-            'company': company if company else "Unknown",
-            'location': location,
+            'company': company[:100],
+            'location': location[:100],
             'url': url,
             'source': 'indeed',
             'raw_text': raw_text,
@@ -582,12 +612,17 @@ def parse_greenhouse_jobs(html, email_date):
                     break
             
             raw_text = ' '.join(lines[:5])[:1000]
-        
+
+        # Final cleanup of all text fields
+        title = clean_text_field(title)
+        company = clean_text_field(company) if company else "Unknown"
+        location = clean_text_field(location)
+
         jobs.append({
             'job_id': generate_job_id(url, title, company),
             'title': title[:200],
-            'company': company,
-            'location': location,
+            'company': company[:100],
+            'location': location[:100],
             'url': url,
             'source': 'greenhouse',
             'raw_text': raw_text,
@@ -643,12 +678,17 @@ def parse_wellfound_jobs(html, email_date):
                     location = line[:100]
             
             raw_text = ' '.join(lines[:8])[:1000]
-        
+
+        # Final cleanup of all text fields
+        title = clean_text_field(title)
+        company = clean_text_field(company) if company else "Unknown"
+        location = clean_text_field(location)
+
         jobs.append({
             'job_id': generate_job_id(url, title, company),
             'title': title[:200],
-            'company': company,
-            'location': location,
+            'company': company[:100],
+            'location': location[:100],
             'url': url,
             'source': 'wellfound',
             'raw_text': raw_text,
@@ -3563,6 +3603,7 @@ Research and recommend 5-10 specific job opportunities that:
 For each job recommendation, provide:
 - Company name (real companies that commonly hire for these roles)
 - Job title
+- Career page URL (if you know the company's career/jobs page URL, otherwise leave blank)
 - Why it's a good fit (2-3 specific reasons based on their resume)
 - Key skills from their resume that match
 - Estimated match score (0-100)
@@ -3573,11 +3614,11 @@ Return ONLY a valid JSON array with this structure:
     "company": "Company Name",
     "title": "Job Title",
     "location": "Location",
+    "career_page_url": "https://company.com/careers or blank if unknown",
     "why_good_fit": "Specific reasons why this role matches their background...",
     "matching_skills": ["skill1", "skill2", "skill3"],
     "match_score": 85,
-    "job_type": "Full-time",
-    "suggested_search_query": "Backend Engineer Python AWS remote"
+    "job_type": "Full-time"
   }}
 ]
 
@@ -3640,6 +3681,15 @@ Focus on real, reputable companies and current in-demand roles. Be specific and 
                 'resume_to_use': resumes[0]['name'] if resumes else 'default'
             }
 
+            # Generate job URL - prefer career page, fallback to Google Jobs search
+            career_url = rec.get('career_page_url', '').strip()
+            if career_url and career_url.startswith('http'):
+                job_url = career_url
+            else:
+                # Create Google Jobs search URL (better than regular Google search)
+                search_query = f"{rec['title']} {rec['company']}".replace(' ', '+')
+                job_url = f"https://www.google.com/search?q={search_query}&ibp=htl;jobs"
+
             # Insert into database
             conn.execute('''
                 INSERT INTO jobs (
@@ -3652,7 +3702,7 @@ Focus on real, reputable companies and current in-demand roles. Be specific and 
                 rec['title'],
                 rec['company'],
                 rec.get('location', primary_locations[0] if primary_locations else 'Remote'),
-                f"https://www.google.com/search?q={rec.get('suggested_search_query', rec['title'] + ' ' + rec['company']).replace(' ', '+')}",
+                job_url,
                 'claude_research',
                 'new',
                 rec.get('match_score', 80),
@@ -3741,6 +3791,7 @@ Research and recommend 5-10 specific job opportunities that:
 For each job recommendation, provide:
 - Company name (real companies that commonly hire for these roles)
 - Job title
+- Career page URL (if you know the company's career/jobs page URL, otherwise leave blank)
 - Why it's a perfect fit for THIS specific resume (2-3 reasons citing actual resume content)
 - Key skills from this resume that match
 - Estimated match score (0-100)
@@ -3751,11 +3802,11 @@ Return ONLY a valid JSON array with this structure:
     "company": "Company Name",
     "title": "Job Title",
     "location": "Location",
+    "career_page_url": "https://company.com/careers or blank if unknown",
     "why_good_fit": "Specific reasons why this role matches THIS resume...",
     "matching_skills": ["skill1", "skill2", "skill3"],
     "match_score": 85,
-    "job_type": "Full-time",
-    "suggested_search_query": "Specific query to find this type of role"
+    "job_type": "Full-time"
   }}
 ]
 
@@ -3817,6 +3868,15 @@ Focus on roles that specifically match the focus areas and target roles for THIS
                 'resume_to_use': resume_name
             }
 
+            # Generate job URL - prefer career page, fallback to Google Jobs search
+            career_url = rec.get('career_page_url', '').strip()
+            if career_url and career_url.startswith('http'):
+                job_url = career_url
+            else:
+                # Create Google Jobs search URL (better than regular Google search)
+                search_query = f"{rec['title']} {rec['company']}".replace(' ', '+')
+                job_url = f"https://www.google.com/search?q={search_query}&ibp=htl;jobs"
+
             # Insert into database
             conn.execute('''
                 INSERT INTO jobs (
@@ -3829,7 +3889,7 @@ Focus on roles that specifically match the focus areas and target roles for THIS
                 rec['title'],
                 rec['company'],
                 rec.get('location', 'Remote'),
-                f"https://www.google.com/search?q={rec.get('suggested_search_query', rec['title']).replace(' ', '+')}+jobs",
+                job_url,
                 f'claude_research_{resume_name}',
                 'new',
                 rec.get('match_score', 80),
