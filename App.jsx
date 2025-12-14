@@ -15,11 +15,11 @@ const STATUS_CONFIG = {
 
 function ScoreBadge({ score }) {
   let color = 'bg-gray-200 text-gray-700';
-  if (score >= 80) color = 'bg-green-500 text-white';
-  else if (score >= 60) color = 'bg-blue-500 text-white';
-  else if (score >= 40) color = 'bg-yellow-500 text-white';
-  else if (score > 0) color = 'bg-red-400 text-white';
-  
+  if (score >= 80) color = 'bg-gradient-to-r from-pink-500 to-pink-600 text-white shadow-md';
+  else if (score >= 60) color = 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm';
+  else if (score >= 40) color = 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-sm';
+  else if (score > 0) color = 'bg-gradient-to-r from-red-400 to-red-500 text-white shadow-sm';
+
   return (
     <span className={`px-2 py-1 rounded-full text-sm font-bold ${color}`}>
       {score || '—'}
@@ -179,15 +179,15 @@ function StatsBar({ stats }) {
   return (
     <div className="grid grid-cols-5 gap-4 mb-6">
       {[
-        { label: 'Total', value: stats.total, color: 'bg-gray-100' },
-        { label: 'New', value: stats.new, color: 'bg-gray-100' },
-        { label: 'Interested', value: stats.interested, color: 'bg-blue-100' },
-        { label: 'Applied', value: stats.applied, color: 'bg-green-100' },
-        { label: 'Avg Score', value: Math.round(stats.avg_score), color: 'bg-purple-100' },
-      ].map(({ label, value, color }) => (
-        <div key={label} className={`${color} rounded-lg p-3 text-center`}>
-          <div className="text-2xl font-bold">{value}</div>
-          <div className="text-xs text-gray-600">{label}</div>
+        { label: 'Total', value: stats.total, color: 'bg-white border border-gray-200', textColor: 'text-gray-900' },
+        { label: 'New', value: stats.new, color: 'bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200', textColor: 'text-gray-900' },
+        { label: 'Interested', value: stats.interested, color: 'bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200', textColor: 'text-blue-900' },
+        { label: 'Applied', value: stats.applied, color: 'bg-gradient-to-br from-green-50 to-green-100 border border-green-200', textColor: 'text-green-900' },
+        { label: 'Avg Score', value: Math.round(stats.avg_score), color: 'bg-gradient-to-br from-pink-100 to-pink-200 border border-pink-300', textColor: 'text-pink-900' },
+      ].map(({ label, value, color, textColor }) => (
+        <div key={label} className={`${color} rounded-lg p-4 text-center shadow-sm hover:shadow-md transition-shadow`}>
+          <div className={`text-3xl font-bold ${textColor}`}>{value}</div>
+          <div className="text-xs text-gray-600 font-medium mt-1">{label}</div>
         </div>
       ))}
     </div>
@@ -996,13 +996,21 @@ export default function App() {
     });
   
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-6xl mx-auto px-4 py-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-pink-50">
+      <header className="bg-white shadow-md border-b border-pink-100">
+        <div className="max-w-6xl mx-auto px-4 py-5">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Job Tracker</h1>
-              <p className="text-sm text-gray-500">AI-powered job matching</p>
+            <div className="flex items-center gap-3">
+              {/* Logo placeholder - add your logo here */}
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-400 to-pink-500 flex items-center justify-center shadow-lg">
+                <span className="text-2xl">🐹</span>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-pink-600 bg-clip-text text-transparent">
+                  Hammy the Hire Helper
+                </h1>
+                <p className="text-sm text-gray-600">AI-powered job matching</p>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -1027,7 +1035,7 @@ export default function App() {
               <button
                 onClick={handleScoreJobs}
                 disabled={scoring}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-500 to-pink-600 text-white rounded-lg hover:from-pink-600 hover:to-pink-700 shadow-md hover:shadow-lg transition-all disabled:opacity-50"
               >
                 <Star size={18} className={scoring ? 'animate-spin' : ''} />
                 {scoring ? 'Scoring...' : 'Score Jobs'}
@@ -1042,40 +1050,40 @@ export default function App() {
         <div className="flex gap-2 mb-6">
           <button
             onClick={() => setActiveView('discovered')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
+            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
               activeView === 'discovered'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-pink-500 to-pink-600 text-white shadow-md'
+                : 'bg-white text-gray-700 hover:bg-pink-50 border border-pink-100'
             }`}
           >
             Discovered Jobs ({jobs.length})
           </button>
           <button
             onClick={() => setActiveView('external')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
+            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
               activeView === 'external'
-                ? 'bg-orange-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md'
+                : 'bg-white text-gray-700 hover:bg-orange-50 border border-orange-100'
             }`}
           >
             External Applications ({externalApps.length})
           </button>
           <button
             onClick={() => setActiveView('resumes')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
+            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
               activeView === 'resumes'
-                ? 'bg-purple-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md'
+                : 'bg-white text-gray-700 hover:bg-purple-50 border border-purple-100'
             }`}
           >
             📄 Resume Library ({resumes.length})
           </button>
           <button
             onClick={() => setActiveView('companies')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
+            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
               activeView === 'companies'
-                ? 'bg-green-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-md'
+                : 'bg-white text-gray-700 hover:bg-green-50 border border-green-100'
             }`}
           >
             🏢 Tracked Companies ({trackedCompanies.length})
