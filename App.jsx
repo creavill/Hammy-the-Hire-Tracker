@@ -15,11 +15,11 @@ const STATUS_CONFIG = {
 
 function ScoreBadge({ score }) {
   let color = 'bg-gray-200 text-gray-700';
-  if (score >= 80) color = 'bg-green-500 text-white';
-  else if (score >= 60) color = 'bg-blue-500 text-white';
-  else if (score >= 40) color = 'bg-yellow-500 text-white';
-  else if (score > 0) color = 'bg-red-400 text-white';
-  
+  if (score >= 80) color = 'bg-gradient-to-r from-pink-500 to-pink-600 text-white shadow-md';
+  else if (score >= 60) color = 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm';
+  else if (score >= 40) color = 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-sm';
+  else if (score > 0) color = 'bg-gradient-to-r from-red-400 to-red-500 text-white shadow-sm';
+
   return (
     <span className={`px-2 py-1 rounded-full text-sm font-bold ${color}`}>
       {score || '—'}
@@ -92,11 +92,6 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
             <div className="flex items-center gap-2 mb-1">
               <ScoreBadge score={job.score} />
               <h3 className="font-semibold text-gray-900 truncate">{job.title}</h3>
-              {resumeRec && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
-                  📄 {Math.round(resumeRec.confidence * 100)}%
-                </span>
-              )}
             </div>
             <p className="text-gray-600 text-sm">{job.company || 'Unknown Company'}</p>
             <p className="text-gray-500 text-xs">{job.location || 'Location not specified'}</p>
@@ -115,59 +110,6 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
       
       {expanded && (
         <div className="border-t px-4 py-3 bg-gray-50 space-y-3">
-          {/* Resume Recommendation Section */}
-          {resumeRec ? (
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-              <h4 className="text-sm font-semibold text-purple-900 mb-2 flex items-center gap-2">
-                <FileText size={16} />
-                Recommended Resume: {resumeRec.resume_name}
-                <span className="ml-auto text-xs font-normal bg-purple-200 px-2 py-0.5 rounded-full">
-                  {Math.round(resumeRec.confidence * 100)}% Match
-                </span>
-              </h4>
-              <p className="text-sm text-purple-800 mb-2">{resumeRec.reasoning}</p>
-              {resumeRec.resume_strengths?.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-xs font-semibold text-purple-900">Your Strengths:</p>
-                  <ul className="text-xs text-purple-700 space-y-0.5 ml-3">
-                    {resumeRec.resume_strengths.map((s, i) => <li key={i}>✓ {s}</li>)}
-                  </ul>
-                </div>
-              )}
-              {resumeRec.resume_gaps?.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-xs font-semibold text-purple-900">Gaps to Address:</p>
-                  <ul className="text-xs text-purple-700 space-y-0.5 ml-3">
-                    {resumeRec.resume_gaps.map((g, i) => <li key={i}>• {g}</li>)}
-                  </ul>
-                </div>
-              )}
-              {resumeRec.alternative_resumes?.length > 0 && (
-                <details className="mt-2">
-                  <summary className="text-xs font-semibold text-purple-900 cursor-pointer">
-                    View {resumeRec.alternative_resumes.length} Alternative Resume(s)
-                  </summary>
-                  <div className="mt-1 space-y-1">
-                    {resumeRec.alternative_resumes.map((alt, i) => (
-                      <div key={i} className="text-xs text-purple-700 ml-3">
-                        • {alt.resume_name} ({Math.round(alt.confidence * 100)}%) - {alt.reason}
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
-            </div>
-          ) : (
-            <button
-              onClick={(e) => { e.stopPropagation(); handleGetRecommendation(); }}
-              disabled={loadingRecommendation}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 disabled:opacity-50"
-            >
-              <Sparkles size={16} />
-              {loadingRecommendation ? 'Getting Recommendation...' : 'Get Resume Recommendation'}
-            </button>
-          )}
-
           {analysis.strengths?.length > 0 && (
             <div>
               <h4 className="text-xs font-semibold text-green-700 uppercase mb-1">Strengths</h4>
@@ -196,14 +138,15 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
           )}
           
           <div className="flex items-center gap-2 pt-2">
-            <a
-              href={job.url}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(job.url, '_blank', 'width=1200,height=800,left=100,top=100');
+              }}
               className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
             >
               <ExternalLink size={14} /> View Job
-            </a>
+            </button>
 
             {!job.cover_letter && (
               <button
@@ -236,15 +179,15 @@ function StatsBar({ stats }) {
   return (
     <div className="grid grid-cols-5 gap-4 mb-6">
       {[
-        { label: 'Total', value: stats.total, color: 'bg-gray-100' },
-        { label: 'New', value: stats.new, color: 'bg-gray-100' },
-        { label: 'Interested', value: stats.interested, color: 'bg-blue-100' },
-        { label: 'Applied', value: stats.applied, color: 'bg-green-100' },
-        { label: 'Avg Score', value: Math.round(stats.avg_score), color: 'bg-purple-100' },
-      ].map(({ label, value, color }) => (
-        <div key={label} className={`${color} rounded-lg p-3 text-center`}>
-          <div className="text-2xl font-bold">{value}</div>
-          <div className="text-xs text-gray-600">{label}</div>
+        { label: 'Total', value: stats.total, color: 'bg-white border border-gray-200', textColor: 'text-gray-900' },
+        { label: 'New', value: stats.new, color: 'bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200', textColor: 'text-gray-900' },
+        { label: 'Interested', value: stats.interested, color: 'bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200', textColor: 'text-blue-900' },
+        { label: 'Applied', value: stats.applied, color: 'bg-gradient-to-br from-green-50 to-green-100 border border-green-200', textColor: 'text-green-900' },
+        { label: 'Avg Score', value: Math.round(stats.avg_score), color: 'bg-gradient-to-br from-pink-100 to-pink-200 border border-pink-300', textColor: 'text-pink-900' },
+      ].map(({ label, value, color, textColor }) => (
+        <div key={label} className={`${color} rounded-lg p-4 text-center shadow-sm hover:shadow-md transition-shadow`}>
+          <div className={`text-3xl font-bold ${textColor}`}>{value}</div>
+          <div className="text-xs text-gray-600 font-medium mt-1">{label}</div>
         </div>
       ))}
     </div>
@@ -690,9 +633,10 @@ export default function App() {
   const [stats, setStats] = useState({ total: 0, new: 0, interested: 0, applied: 0, avg_score: 0 });
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [scoring, setScoring] = useState(false);
   const [researching, setResearching] = useState(false);
   const [expandedJob, setExpandedJob] = useState(null);
-  const [filter, setFilter] = useState({ status: '', minScore: 0, search: '' });
+  const [filter, setFilter] = useState({ status: '', minScore: 0, search: '', sort: 'date' });
   const [activeView, setActiveView] = useState('discovered'); // 'discovered', 'external', 'resumes', or 'companies'
   const [externalApps, setExternalApps] = useState([]);
   const [showAddExternal, setShowAddExternal] = useState(false);
@@ -795,7 +739,26 @@ export default function App() {
     }
     setScanning(false);
   };
-  
+
+  const handleScoreJobs = async () => {
+    setScoring(true);
+    try {
+      const response = await fetch(`${API_BASE}/score-jobs`, { method: 'POST' });
+      const data = await response.json();
+      if (data.error) {
+        alert(`Scoring failed: ${data.error}`);
+      } else {
+        alert(`✓ Scored ${data.scored} jobs out of ${data.total}`);
+      }
+      // Refresh jobs to show new scores
+      setTimeout(fetchJobs, 2000);
+    } catch (err) {
+      console.error('Scoring failed:', err);
+      alert('Scoring failed. Check console for details.');
+    }
+    setScoring(false);
+  };
+
   const handleStatusChange = async (jobId, newStatus) => {
     try {
       await fetch(`${API_BASE}/jobs/${jobId}`, {
@@ -892,12 +855,10 @@ export default function App() {
 
   // Job management handlers (from job-management-features branch)
   const handleDeleteJob = async (jobId) => {
-    if (!window.confirm('Are you sure you want to delete this job? This action cannot be undone.')) {
-      return;
-    }
     try {
       await fetch(`${API_BASE}/jobs/${jobId}`, { method: 'DELETE' });
-      fetchJobs();
+      // Update jobs state directly instead of refetching
+      setJobs(prevJobs => prevJobs.filter(job => job.job_id !== jobId));
     } catch (err) {
       console.error('Delete job failed:', err);
     }
@@ -1004,25 +965,52 @@ export default function App() {
     }
   };
 
-  const filteredJobs = jobs.filter(job => {
-    if (filter.search) {
-      const search = filter.search.toLowerCase();
-      const matches = 
-        job.title?.toLowerCase().includes(search) ||
-        job.company?.toLowerCase().includes(search);
-      if (!matches) return false;
-    }
-    return true;
-  });
+  const filteredJobs = jobs
+    .filter(job => {
+      if (filter.search) {
+        const search = filter.search.toLowerCase();
+        const matches =
+          job.title?.toLowerCase().includes(search) ||
+          job.company?.toLowerCase().includes(search);
+        if (!matches) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      switch (filter.sort) {
+        case 'date':
+          return new Date(b.created_at) - new Date(a.created_at);
+        case 'date-oldest':
+          return new Date(a.created_at) - new Date(b.created_at);
+        case 'title':
+          return (a.title || '').localeCompare(b.title || '');
+        case 'title-desc':
+          return (b.title || '').localeCompare(a.title || '');
+        case 'score':
+          return (b.score || 0) - (a.score || 0);
+        case 'score-low':
+          return (a.score || 0) - (b.score || 0);
+        default:
+          return new Date(b.created_at) - new Date(a.created_at);
+      }
+    });
   
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-6xl mx-auto px-4 py-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-pink-50">
+      <header className="bg-white shadow-md border-b border-pink-100">
+        <div className="max-w-6xl mx-auto px-4 py-5">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Job Tracker</h1>
-              <p className="text-sm text-gray-500">AI-powered job matching</p>
+            <div className="flex items-center gap-3">
+              {/* Logo placeholder - add your logo here */}
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-400 to-pink-500 flex items-center justify-center shadow-lg">
+                <span className="text-2xl">🐹</span>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-pink-600 bg-clip-text text-transparent">
+                  Hammy the Hire Helper
+                </h1>
+                <p className="text-sm text-gray-600">AI-powered job matching</p>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -1043,6 +1031,15 @@ export default function App() {
                 <RefreshCw size={18} className={scanning ? 'animate-spin' : ''} />
                 {scanning ? 'Scanning...' : 'Scan Emails'}
               </button>
+
+              <button
+                onClick={handleScoreJobs}
+                disabled={scoring}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-300 to-pink-400 text-pink-900 rounded-lg hover:from-pink-400 hover:to-pink-500 shadow-md hover:shadow-lg transition-all disabled:opacity-50 border-2 border-pink-400"
+              >
+                <Star size={18} className={scoring ? 'animate-spin' : ''} />
+                {scoring ? 'Scoring...' : 'Score Jobs'}
+              </button>
             </div>
           </div>
         </div>
@@ -1053,40 +1050,40 @@ export default function App() {
         <div className="flex gap-2 mb-6">
           <button
             onClick={() => setActiveView('discovered')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
+            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
               activeView === 'discovered'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-pink-300 to-pink-400 text-pink-900 shadow-md border-2 border-pink-400'
+                : 'bg-white text-gray-700 hover:bg-pink-50 border-2 border-pink-100'
             }`}
           >
             Discovered Jobs ({jobs.length})
           </button>
           <button
             onClick={() => setActiveView('external')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
+            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
               activeView === 'external'
-                ? 'bg-orange-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-emerald-200 to-emerald-300 text-emerald-900 shadow-md border-2 border-emerald-400'
+                : 'bg-white text-gray-700 hover:bg-emerald-50 border-2 border-emerald-100'
             }`}
           >
             External Applications ({externalApps.length})
           </button>
           <button
             onClick={() => setActiveView('resumes')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
+            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
               activeView === 'resumes'
-                ? 'bg-purple-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-purple-200 to-purple-300 text-purple-900 shadow-md border-2 border-purple-400'
+                : 'bg-white text-gray-700 hover:bg-purple-50 border-2 border-purple-100'
             }`}
           >
             📄 Resume Library ({resumes.length})
           </button>
           <button
             onClick={() => setActiveView('companies')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
+            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
               activeView === 'companies'
-                ? 'bg-green-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-gradient-to-r from-amber-200 to-amber-300 text-amber-900 shadow-md border-2 border-amber-400'
+                : 'bg-white text-gray-700 hover:bg-amber-50 border-2 border-amber-100'
             }`}
           >
             🏢 Tracked Companies ({trackedCompanies.length})
@@ -1096,21 +1093,6 @@ export default function App() {
         {activeView === 'discovered' ? (
           <>
             <StatsBar stats={stats} />
-
-            {/* Action Bar */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="text-sm text-gray-600">
-                {jobs.filter(j => j.resume_recommendation).length} of {jobs.length} jobs have resume recommendations
-              </div>
-              <button
-                onClick={handleBatchRecommend}
-                disabled={batchRecommending || jobs.every(j => j.resume_recommendation)}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
-              >
-                <Sparkles size={18} className={batchRecommending ? 'animate-spin' : ''} />
-                {batchRecommending ? `Recommending... (${batchProgress.current}/${batchProgress.total})` : 'Batch Recommend Resumes'}
-              </button>
-            </div>
 
             {/* Filters */}
             <div className="flex items-center gap-4 mb-6">
@@ -1145,6 +1127,19 @@ export default function App() {
             <option value="80">80+ (Highly Qualified)</option>
             <option value="60">60+ (Good Match)</option>
             <option value="40">40+ (Partial Match)</option>
+          </select>
+
+          <select
+            value={filter.sort}
+            onChange={(e) => setFilter({ ...filter, sort: e.target.value })}
+            className="px-3 py-2 border rounded-lg"
+          >
+            <option value="date">Sort by Date (Newest)</option>
+            <option value="date-oldest">Sort by Date (Oldest)</option>
+            <option value="title">Sort by Title (A-Z)</option>
+            <option value="title-desc">Sort by Title (Z-A)</option>
+            <option value="score">Sort by Score (High-Low)</option>
+            <option value="score-low">Sort by Score (Low-High)</option>
           </select>
         </div>
         
