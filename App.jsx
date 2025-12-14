@@ -637,7 +637,7 @@ export default function App() {
   const [researching, setResearching] = useState(false);
   const [expandedJob, setExpandedJob] = useState(null);
   const [filter, setFilter] = useState({ status: '', minScore: 0, search: '', sort: 'date' });
-  const [activeView, setActiveView] = useState('discovered'); // 'discovered', 'external', 'resumes', 'companies', or 'roadmap'
+  const [activeView, setActiveView] = useState('discovered'); // 'discovered', 'external', 'resumes', 'companies', 'roadmap', or 'settings'
   const [externalApps, setExternalApps] = useState([]);
   const [showAddExternal, setShowAddExternal] = useState(false);
   const [resumes, setResumes] = useState([]);
@@ -647,6 +647,8 @@ export default function App() {
   const [trackedCompanies, setTrackedCompanies] = useState([]);
   const [showAddCompany, setShowAddCompany] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
+  const [customEmailSources, setCustomEmailSources] = useState([]);
+  const [showAddEmailSource, setShowAddEmailSource] = useState(false);
   
   const fetchJobs = useCallback(async () => {
     setLoading(true);
