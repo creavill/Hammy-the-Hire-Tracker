@@ -57,3 +57,7 @@ logs/
 
 # Cover letters (generated)
 cover_letters/
+
+# Personal resumes (keep templates)
+resumes/*.txt
+!resumes/templates/*.txt

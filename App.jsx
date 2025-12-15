@@ -1216,7 +1216,7 @@ export default function App() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-pink-600 dark:from-pink-400 dark:to-purple-400 bg-clip-text text-transparent">
-                  Henry the Hire Tracker
+                  Hammy the Hire Tracker
                 </h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">AI-powered job matching</p>
               </div>
@@ -1774,7 +1774,7 @@ export default function App() {
             {/* Roadmap View */}
             <div className="mb-6">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">🗺️ Product Roadmap</h2>
-              <p className="text-gray-600 dark:text-gray-400">Track feature progress and planned improvements for Henry the Hire Tracker</p>
+              <p className="text-gray-600 dark:text-gray-400">Track feature progress and planned improvements for Hammy the Hire Tracker</p>
             </div>
 
             {/* Progress Overview */}
