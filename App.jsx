@@ -6,7 +6,7 @@ const API_BASE = '/api';
 const STATUS_CONFIG = {
   new: { label: 'New', color: 'bg-gray-100 text-gray-700', icon: Clock },
   interested: { label: 'Interested', color: 'bg-blue-100 text-blue-700', icon: Star },
-  applied: { label: 'Applied', color: 'bg-green-100 text-green-700', icon: CheckCircle },
+  applied: { label: 'Applied', color: 'bg-cyan-100 text-cyan-700', icon: CheckCircle },
   interviewing: { label: 'Interviewing', color: 'bg-purple-100 text-purple-700', icon: Briefcase },
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700', icon: XCircle },
   offer: { label: 'Offer', color: 'bg-yellow-100 text-yellow-700', icon: Star },
@@ -128,7 +128,7 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
         <div className="border-t px-4 py-3 bg-gray-50 space-y-3">
           {analysis.strengths?.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-green-700 uppercase mb-1">Strengths</h4>
+              <h4 className="text-xs font-semibold text-cyan-700 uppercase mb-1">Strengths</h4>
               <ul className="text-sm text-gray-700 space-y-1">
                 {analysis.strengths.map((s, i) => <li key={i}>• {s}</li>)}
               </ul>
@@ -158,7 +158,7 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
             <div className="flex items-center justify-between mb-1">
               <h4 className="text-xs font-semibold text-gray-700 uppercase">Notes</h4>
               {saveStatus && (
-                <span className={`text-xs ${saveStatus === 'saving' ? 'text-blue-600' : 'text-green-600'}`}>
+                <span className={`text-xs ${saveStatus === 'saving' ? 'text-blue-600' : 'text-cyan-600'}`}>
                   {saveStatus === 'saving' ? 'Saving...' : '✓ Saved'}
                 </span>
               )}
@@ -218,7 +218,7 @@ function StatsBar({ stats }) {
         { label: 'Total', value: stats.total, color: 'bg-white border border-gray-200', textColor: 'text-gray-900' },
         { label: 'New', value: stats.new, color: 'bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200', textColor: 'text-gray-900' },
         { label: 'Interested', value: stats.interested, color: 'bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200', textColor: 'text-blue-900' },
-        { label: 'Applied', value: stats.applied, color: 'bg-gradient-to-br from-green-50 to-green-100 border border-green-200', textColor: 'text-green-900' },
+        { label: 'Applied', value: stats.applied, color: 'bg-gradient-to-br from-cyan-50 to-cyan-100 border border-cyan-200', textColor: 'text-cyan-900' },
         { label: 'Avg Score', value: Math.round(stats.avg_score), color: 'bg-gradient-to-br from-pink-100 to-pink-200 border border-pink-300', textColor: 'text-pink-900' },
       ].map(({ label, value, color, textColor }) => (
         <div key={label} className={`${color} rounded-lg p-4 text-center shadow-sm hover:shadow-md transition-shadow`}>
@@ -453,7 +453,7 @@ function ResumeUploadModal({ onClose, onSave }) {
                 <label className="cursor-pointer">
                   <span className="text-sm text-gray-600">
                     {selectedFile ? (
-                      <span className="text-green-600 font-medium">
+                      <span className="text-teal-600 font-medium">
                         ✓ {selectedFile.name}
                       </span>
                     ) : (
@@ -566,7 +566,7 @@ function ExternalApplicationCard({ app, onStatusChange, expanded, onToggle, onDe
   };
 
   const EXTERNAL_STATUS_CONFIG = {
-    applied: { label: 'Applied', color: 'bg-green-100 text-green-700', icon: CheckCircle },
+    applied: { label: 'Applied', color: 'bg-cyan-100 text-cyan-700', icon: CheckCircle },
     interviewing: { label: 'Interviewing', color: 'bg-purple-100 text-purple-700', icon: Briefcase },
     rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700', icon: XCircle },
     offer: { label: 'Offer', color: 'bg-yellow-100 text-yellow-700', icon: Star },
@@ -1212,11 +1212,11 @@ export default function App() {
             <div className="flex items-center gap-3">
               {/* Logo placeholder - add your logo here */}
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-400 to-pink-500 flex items-center justify-center shadow-lg">
-                <span className="text-2xl">🐹</span>
+                <span className="text-2xl">🐷</span>
               </div>
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-pink-600 dark:from-pink-400 dark:to-purple-400 bg-clip-text text-transparent">
-                  Hammy the Hire Helper
+                  Henry the Hire Tracker
                 </h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">AI-powered job matching</p>
               </div>
@@ -1537,7 +1537,7 @@ export default function App() {
               <h2 className="text-xl font-semibold text-gray-900">Tracked Companies</h2>
               <button
                 onClick={() => setShowAddCompany(!showAddCompany)}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
               >
                 <Plus size={18} />
                 {showAddCompany ? 'Cancel' : 'Add Company'}
@@ -1607,7 +1607,7 @@ export default function App() {
                     <div className="flex gap-2">
                       <button
                         type="submit"
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                        className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
                       >
                         Add Company
                       </button>
@@ -1633,7 +1633,7 @@ export default function App() {
                 </p>
                 <button
                   onClick={() => setShowAddCompany(true)}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
                 >
                   <Plus size={20} />
                   Add Your First Company
@@ -1687,7 +1687,7 @@ export default function App() {
                           <div className="flex gap-2">
                             <button
                               type="submit"
-                              className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700"
+                              className="px-3 py-1.5 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700"
                             >
                               Save
                             </button>
@@ -1769,19 +1769,19 @@ export default function App() {
               </div>
             )}
           </>
-        ) : (
+        ) : activeView === 'roadmap' ? (
           <>
             {/* Roadmap View */}
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">🗺️ Product Roadmap</h2>
-              <p className="text-gray-600">Track feature progress and planned improvements for Hammy the Hire Helper</p>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">🗺️ Product Roadmap</h2>
+              <p className="text-gray-600 dark:text-gray-400">Track feature progress and planned improvements for Henry the Hire Tracker</p>
             </div>
 
             {/* Progress Overview */}
             <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
-                <div className="text-3xl font-bold text-green-700">3%</div>
-                <div className="text-sm text-green-800 font-medium">Overall Complete</div>
+              <div className="bg-gradient-to-br from-teal-50 to-teal-100 rounded-lg p-4 border border-teal-200">
+                <div className="text-3xl font-bold text-teal-700">3%</div>
+                <div className="text-sm text-teal-800 font-medium">Overall Complete</div>
               </div>
               <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
                 <div className="text-3xl font-bold text-blue-700">31</div>
@@ -1860,7 +1860,7 @@ export default function App() {
                     <input type="checkbox" className="mt-1" defaultChecked />
                     <div className="opacity-60">
                       <div className="font-medium text-gray-900 line-through">Create Roadmap Page</div>
-                      <div className="text-xs text-green-600">✓ Completed</div>
+                      <div className="text-xs text-teal-600">✓ Completed</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
@@ -2016,7 +2016,7 @@ export default function App() {
                 <h3 className="font-bold text-pink-900 mb-3">🚀 Current Sprint (This Week)</h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2 text-pink-800">
-                    <CheckCircle size={16} className="text-green-600" />
+                    <CheckCircle size={16} className="text-teal-600" />
                     <span className="font-medium">Create Roadmap Page - DONE</span>
                   </div>
                   <div className="flex items-center gap-2 text-pink-800">
@@ -2219,7 +2219,7 @@ export default function App() {
                             <h4 className="font-semibold text-gray-900">{source.name}</h4>
                             <span className={`text-xs px-2 py-0.5 rounded-full ${
                               source.enabled
-                                ? 'bg-green-100 text-green-700'
+                                ? 'bg-teal-100 text-teal-700'
                                 : 'bg-gray-100 text-gray-600'
                             }`}>
                               {source.enabled ? 'Active' : 'Disabled'}
@@ -2254,7 +2254,7 @@ export default function App() {
                             className={`px-3 py-1 text-sm rounded ${
                               source.enabled
                                 ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                : 'bg-green-100 text-green-700 hover:bg-green-200'
+                                : 'bg-teal-100 text-teal-700 hover:bg-teal-200'
                             }`}
                             title={source.enabled ? 'Disable' : 'Enable'}
                           >
@@ -2317,7 +2317,7 @@ export default function App() {
           <div
             key={toast.id}
             className={`px-4 py-3 rounded-lg shadow-lg text-white transform transition-all duration-300 animate-slide-in ${
-              toast.type === 'success' ? 'bg-green-600' :
+              toast.type === 'success' ? 'bg-teal-600' :
               toast.type === 'error' ? 'bg-red-600' :
               toast.type === 'warning' ? 'bg-yellow-600' :
               'bg-blue-600'
