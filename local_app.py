@@ -340,6 +340,17 @@ def init_db():
         )
     ''')
 
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS deleted_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_url TEXT NOT NULL UNIQUE,
+            title TEXT,
+            company TEXT,
+            deleted_at TEXT,
+            deleted_reason TEXT DEFAULT 'user_deleted'
+        )
+    ''')
+
     # Migration: Add job_id column if it doesn't exist
     try:
         conn.execute("SELECT job_id FROM followups LIMIT 1")
@@ -353,6 +364,13 @@ def init_db():
     except sqlite3.OperationalError:
         logger.info("🔄 Migrating database: adding 'viewed' column...")
         conn.execute("ALTER TABLE jobs ADD COLUMN viewed INTEGER DEFAULT 0")
+
+    # Migration: Add job_description column if it doesn't exist
+    try:
+        conn.execute("SELECT job_description FROM jobs LIMIT 1")
+    except sqlite3.OperationalError:
+        logger.info("🔄 Migrating database: adding 'job_description' column...")
+        conn.execute("ALTER TABLE jobs ADD COLUMN job_description TEXT")
 
     # Migration: Add resume-related columns to jobs table
     try:
@@ -502,6 +520,59 @@ def generate_job_id(url, title, company):
     content = f"{clean_url}:{title}:{company}".lower()
     return hashlib.sha256(content.encode()).hexdigest()[:16]
 
+# Common job title patterns to help split title from company
+COMMON_JOB_TITLES = [
+    'Engineer', 'Developer', 'Architect', 'Manager', 'Director', 'Lead',
+    'Senior', 'Junior', 'Staff', 'Principal', 'Analyst', 'Designer',
+    'Scientist', 'Specialist', 'Coordinator', 'Administrator', 'Consultant'
+]
+
+def improved_title_company_split(combined_text):
+    """
+    Improved splitting of combined title/company text.
+
+    Handles patterns like:
+    - "Senior Software EngineerGoogle"
+    - "Backend DeveloperAcme Corp"
+    - "Product ManagerStripe"
+
+    Args:
+        combined_text: Combined title+company string
+
+    Returns:
+        Tuple of (title, company) or (combined_text, "") if can't split
+    """
+    # Try explicit delimiters first
+    for delimiter in [' at ', ' - ', ' | ', ' @ ']:
+        if delimiter in combined_text:
+            parts = combined_text.split(delimiter, 1)
+            return (parts[0].strip(), parts[1].strip())
+
+    # Try to find where job title ends and company begins
+    # Look for transition from lowercase letter to uppercase (EngineerAcme)
+    match = re.search(r'([a-z])([A-Z][A-Za-z0-9\s&.,-]+)$', combined_text)
+    if match:
+        title = combined_text[:match.start(2)].strip()
+        company = match.group(2).strip()
+
+        # Validate: title should contain at least one common job keyword
+        title_lower = title.lower()
+        if any(keyword.lower() in title_lower for keyword in COMMON_JOB_TITLES):
+            return (title, company)
+
+    # Fallback: look for last sequence of capital letters
+    capital_match = re.search(r'^(.+?)([A-Z][A-Za-z0-9\s&.,-]+)$', combined_text)
+    if capital_match:
+        potential_title = capital_match.group(1).strip()
+        potential_company = capital_match.group(2).strip()
+
+        # Only use if title contains job keywords
+        if any(keyword.lower() in potential_title.lower() for keyword in COMMON_JOB_TITLES):
+            return (potential_title, potential_company)
+
+    # Can't reliably split - return original as title
+    return (combined_text, "")
+
 def parse_linkedin_jobs(html, email_date):
     """
     Extract job listings from LinkedIn job alert emails.
@@ -575,27 +646,18 @@ def parse_linkedin_jobs(html, email_date):
         title = full_text
         company = ""
         location = ""
-        
-        # Split on delimiter
+
+        # Split on location delimiter
         if '·' in full_text:
             parts = full_text.split('·', 1)
             title_company_part = parts[0].strip()
             location = parts[1].strip() if len(parts) > 1 else ""
-            
-            # Company is capitalized word(s) after lowercase letter
-            # Match patterns like "EngineerCompanyName" or "DeveloperLensa"
-            match = re.search(r'([a-z])([A-Z][A-Za-z0-9\s&.,-]+)$', title_company_part)
-            if match:
-                title = title_company_part[:match.start(2)].strip()
-                company = match.group(2).strip()
-            else:
-                # Fallback: split on last capital letter sequence
-                capital_match = re.search(r'^(.+?)([A-Z][A-Za-z0-9\s&.,-]+)$', title_company_part)
-                if capital_match:
-                    title = capital_match.group(1).strip()
-                    company = capital_match.group(2).strip()
-                else:
-                    title = title_company_part
+
+            # Use improved splitting logic
+            title, company = improved_title_company_split(title_company_part)
+        else:
+            # No location delimiter, try to split anyway
+            title, company = improved_title_company_split(full_text)
         
         # Fallback: check parent for more context
         if not company:
@@ -716,16 +778,29 @@ def parse_indeed_jobs(html, email_date):
             
             # Indeed format: Title / Company / Location / Salary / Description
             for i, line in enumerate(lines):
+                line_lower = line.lower()
+
+                # Skip rating lines
+                if re.match(r'^\d+\.?\d*\s*\d', line):
+                    continue
+
                 if title in line and i + 1 < len(lines):
-                    # Next line is usually company
-                    potential_company = lines[i + 1]
-                    # Skip ratings like "4.8 4.8/5 rating"
-                    if not re.match(r'^\d+\.?\d*\s*\d', potential_company):
-                        company = potential_company[:100]
-                    if i + 2 < len(lines):
-                        potential_location = lines[i + 2]
-                        if 'remote' in potential_location.lower() or ',' in potential_location:
-                            location = potential_location[:100]
+                    # Next non-rating line is usually company
+                    for j in range(i + 1, min(i + 4, len(lines))):
+                        potential_company = lines[j]
+                        # Skip ratings and salary lines
+                        if not re.match(r'^\d+\.?\d*\s*\d', potential_company) and '$' not in potential_company:
+                            company = potential_company[:100]
+
+                            # Look for location in next lines
+                            for k in range(j + 1, min(j + 3, len(lines))):
+                                potential_location = lines[k]
+                                if ('remote' in potential_location.lower() or
+                                    ',' in potential_location or
+                                    any(state in potential_location for state in ['CA', 'NY', 'TX', 'FL'])):
+                                    location = potential_location[:100]
+                                    break
+                            break
                     break
             
             raw_text = ' '.join(lines[:6])[:1000]
@@ -2679,25 +2754,101 @@ def update_job(job_id):
     conn.close()
     return jsonify({'success': True})
 
+@app.route('/api/jobs/<job_id>/description', methods=['PATCH'])
+def update_job_description(job_id):
+    """
+    Update job description and automatically rescore the job.
+
+    Route: PATCH /api/jobs/{job_id}/description
+
+    Request body:
+        {
+            "job_description": "Full job description text..."
+        }
+
+    Returns:
+        {
+            "success": true,
+            "new_score": 85,
+            "analysis": {...}
+        }
+    """
+    data = request.json
+    job_description = data.get('job_description', '').strip()
+
+    if not job_description:
+        return jsonify({'error': 'Job description cannot be empty'}), 400
+
+    conn = get_db()
+
+    # Update the job description
+    conn.execute("""
+        UPDATE jobs
+        SET job_description = ?, updated_at = ?
+        WHERE job_id = ?
+    """, (job_description, datetime.now().isoformat(), job_id))
+
+    # Get the updated job
+    job = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+
+    if not job:
+        conn.close()
+        return jsonify({'error': 'Job not found'}), 404
+
+    # Auto-rescore with the new description
+    try:
+        resume_text = get_combined_resume_text()
+
+        # Analyze with the full description
+        analysis_result = analyze_job(dict(job), resume_text)
+
+        if analysis_result:
+            # Update with new analysis
+            conn.execute("""
+                UPDATE jobs
+                SET analysis = ?,
+                    updated_at = ?
+                WHERE job_id = ?
+            """, (json.dumps(analysis_result), datetime.now().isoformat(), job_id))
+
+            conn.commit()
+            conn.close()
+
+            return jsonify({
+                'success': True,
+                'new_score': analysis_result.get('qualification_score', 0),
+                'analysis': analysis_result
+            })
+        else:
+            conn.close()
+            return jsonify({'error': 'Failed to analyze job'}), 500
+
+    except Exception as e:
+        logger.error(f"Error rescoring job: {e}")
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/jobs/<job_id>', methods=['DELETE'])
 def delete_job(job_id):
     """
     Delete a job and all associated data.
 
-    Route: DELETE /api/jobs/{job_id}
-
-    Cascading deletes:
-        - Job entry from jobs table
-        - Linked external_applications entries
-        - Resume usage logs for this job
-
-    Returns:
-        JSON: {success: true}
-
-    Examples:
-        DELETE /api/jobs/abc123
+    Tracks deleted jobs by URL to prevent re-scanning the same job.
     """
     conn = get_db()
+
+    # Get the job details before deleting
+    job = conn.execute("SELECT title, company, url FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+
+    if job and job['url']:
+        # Track this deletion to prevent re-scanning
+        try:
+            conn.execute("""
+                INSERT OR REPLACE INTO deleted_jobs (job_url, title, company, deleted_at, deleted_reason)
+                VALUES (?, ?, ?, ?, ?)
+            """, (job['url'], job['title'], job['company'], datetime.now().isoformat(), 'user_deleted'))
+        except Exception as e:
+            logger.warning(f"Failed to track deleted job: {e}")
 
     # Delete the job
     conn.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
@@ -2765,6 +2916,12 @@ def api_scan():
             if existing:
                 duplicate_count += 1
                 logger.info(f"⏭️  Skipping duplicate: {job['title'][:50]}")
+                continue
+
+            # Check if this job was previously deleted
+            deleted_check = conn.execute("SELECT id FROM deleted_jobs WHERE job_url = ?", (job['url'],)).fetchone()
+            if deleted_check:
+                logger.debug(f"⏭️  Skipping previously deleted job: {job['title'][:50]}")
                 continue
 
             # AI filter and baseline score
