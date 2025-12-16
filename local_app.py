@@ -57,6 +57,16 @@ import anthropic
 # Database backup manager
 from backup_manager import BackupManager, backup_on_startup
 
+# Logging for error tracking and debugging
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # ============== Configuration ==============
 # Load user configuration from config.yaml
 try:
@@ -64,6 +74,12 @@ try:
 except FileNotFoundError as e:
     print(f"\n❌ Configuration Error: {e}")
     print("📝 Copy config.example.yaml to config.yaml and fill in your information.\n")
+    exit(1)
+
+# Check for required environment variables
+if not os.getenv("ANTHROPIC_API_KEY"):
+    logger.error("❌ ANTHROPIC_API_KEY environment variable is not set!")
+    logger.error("📝 Please set ANTHROPIC_API_KEY in your .env file or environment.")
     exit(1)
 
 # Application directories
@@ -328,21 +344,21 @@ def init_db():
     try:
         conn.execute("SELECT job_id FROM followups LIMIT 1")
     except sqlite3.OperationalError:
-        print("Migrating database: adding 'job_id' column to followups...")
+        logger.info("🔄 Migrating database: adding 'job_id' column to followups...")
         conn.execute("ALTER TABLE followups ADD COLUMN job_id TEXT")
     
     # Migration: Add viewed column if it doesn't exist
     try:
         conn.execute("SELECT viewed FROM jobs LIMIT 1")
     except sqlite3.OperationalError:
-        print("Migrating database: adding 'viewed' column...")
+        logger.info("🔄 Migrating database: adding 'viewed' column...")
         conn.execute("ALTER TABLE jobs ADD COLUMN viewed INTEGER DEFAULT 0")
 
     # Migration: Add resume-related columns to jobs table
     try:
         conn.execute("SELECT recommended_resume_id FROM jobs LIMIT 1")
     except sqlite3.OperationalError:
-        print("Migrating database: adding resume-related columns to jobs...")
+        logger.info("🔄 Migrating database: adding resume-related columns to jobs...")
         conn.execute("ALTER TABLE jobs ADD COLUMN recommended_resume_id TEXT")
         conn.execute("ALTER TABLE jobs ADD COLUMN resume_recommendation TEXT")
         conn.execute("ALTER TABLE jobs ADD COLUMN selected_resume_id TEXT")
@@ -352,33 +368,100 @@ def init_db():
     conn.close()
 
 def get_db():
+    """
+    Create and return a database connection with Row factory.
+
+    Establishes a SQLite connection with a 30-second timeout to handle
+    concurrent access. The Row factory allows dict-like access to rows.
+
+    Returns:
+        sqlite3.Connection: Database connection with Row factory enabled
+
+    Examples:
+        >>> conn = get_db()
+        >>> job = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (id,)).fetchone()
+        >>> print(job['title'])  # Access by column name
+    """
     conn = sqlite3.connect(DB_PATH, timeout=30.0)  # Wait up to 30s for lock
     conn.row_factory = sqlite3.Row
     return conn
 
 # ============== Gmail ==============
 def get_gmail_service():
-    creds = None
-    if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-    
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not CREDENTIALS_FILE.exists():
-                raise FileNotFoundError(
-                    f"Missing {CREDENTIALS_FILE}. Download from Google Cloud Console."
-                )
-            flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
-            creds = flow.run_local_server(port=0)
-        
-        with open(TOKEN_FILE, 'w') as f:
-            f.write(creds.to_json())
-    
-    return build('gmail', 'v1', credentials=creds)
+    """
+    Authenticate and build Gmail API service.
+
+    Handles OAuth2 authentication flow for Gmail API access:
+    - Loads existing credentials from token.json if available
+    - Refreshes expired credentials automatically
+    - Initiates OAuth flow if credentials are missing/invalid
+    - Saves credentials to token.json for future use
+
+    Returns:
+        googleapiclient.discovery.Resource: Authenticated Gmail API service
+
+    Raises:
+        FileNotFoundError: If credentials.json is missing
+        Exception: If authentication or service creation fails
+
+    Examples:
+        >>> service = get_gmail_service()
+        >>> messages = service.users().messages().list(userId='me').execute()
+    """
+    try:
+        creds = None
+        if TOKEN_FILE.exists():
+            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    logger.error(f"❌ Failed to refresh Gmail credentials: {e}")
+                    # Remove invalid token file
+                    if TOKEN_FILE.exists():
+                        TOKEN_FILE.unlink()
+                    raise
+            else:
+                if not CREDENTIALS_FILE.exists():
+                    raise FileNotFoundError(
+                        f"Missing {CREDENTIALS_FILE}. Download from Google Cloud Console."
+                    )
+                flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
+                creds = flow.run_local_server(port=0)
+
+            with open(TOKEN_FILE, 'w') as f:
+                f.write(creds.to_json())
+
+        return build('gmail', 'v1', credentials=creds)
+    except FileNotFoundError:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to create Gmail service: {e}")
+        raise
 
 def get_email_body(payload):
+    """
+    Recursively extract HTML body from Gmail message payload.
+
+    Gmail messages can have complex MIME structures with nested parts.
+    This function searches for the HTML body by:
+    - Checking direct body data
+    - Recursively searching through multipart sections
+    - Prioritizing text/html MIME types
+    - Decoding base64url-encoded content
+
+    Args:
+        payload: Gmail message payload dictionary from API
+
+    Returns:
+        Decoded HTML body as string, or empty string if not found
+
+    Examples:
+        >>> message = service.users().messages().get(userId='me', id=msg_id).execute()
+        >>> html = get_email_body(message['payload'])
+    """
     body = ""
     if 'body' in payload and payload['body'].get('data'):
         body = base64.urlsafe_b64decode(payload['body']['data']).decode('utf-8')
@@ -394,13 +477,67 @@ def get_email_body(payload):
     return body
 
 def generate_job_id(url, title, company):
+    """
+    Generate unique, deterministic job ID from job attributes.
+
+    Creates a consistent hash-based ID to prevent duplicate job entries.
+    Uses cleaned URL (without tracking params) to ensure same job from
+    different sources gets same ID.
+
+    Args:
+        url: Job posting URL
+        title: Job title
+        company: Company name
+
+    Returns:
+        16-character hex string as unique job identifier
+
+    Examples:
+        >>> id1 = generate_job_id("https://linkedin.com/jobs/123?refId=xyz", "Engineer", "Acme")
+        >>> id2 = generate_job_id("https://linkedin.com/jobs/123", "Engineer", "Acme")
+        >>> assert id1 == id2  # Same job despite different URLs
+    """
     # Use cleaned URL for consistent ID generation
     clean_url = clean_job_url(url)
     content = f"{clean_url}:{title}:{company}".lower()
     return hashlib.sha256(content.encode()).hexdigest()[:16]
 
 def parse_linkedin_jobs(html, email_date):
-    """Extract LinkedIn jobs with better filtering."""
+    """
+    Extract job listings from LinkedIn job alert emails.
+
+    Parses HTML from LinkedIn job alert emails to extract job details.
+    Handles LinkedIn's email format where job titles, companies, and
+    locations are often concatenated without clear delimiters.
+
+    Parsing strategies:
+    - Finds links with 10-digit job IDs
+    - Extracts title/company from link text using pattern matching
+    - Filters out UI elements (unsubscribe, settings, etc.)
+    - Cleans URLs to remove tracking parameters
+
+    Args:
+        html: Raw HTML content from LinkedIn email
+        email_date: ISO format date string when email was received
+
+    Returns:
+        List of job dictionaries with keys:
+        - job_id: Unique identifier
+        - title: Job title
+        - company: Company name
+        - location: Job location
+        - url: Cleaned job URL
+        - source: 'linkedin'
+        - raw_text: Preview text
+        - created_at: Email date
+        - email_date: Email date
+
+    Examples:
+        >>> html = '<a href="linkedin.com/jobs/view/123">EngineerAcme · Remote</a>'
+        >>> jobs = parse_linkedin_jobs(html, '2025-01-15T10:00:00')
+        >>> print(jobs[0]['title'])  # "Engineer"
+        >>> print(jobs[0]['company'])  # "Acme"
+    """
     jobs = []
     soup = BeautifulSoup(html, 'html.parser')
     
@@ -503,7 +640,40 @@ def parse_linkedin_jobs(html, email_date):
 
 
 def parse_indeed_jobs(html, email_date):
-    """Extract Indeed jobs with better filtering."""
+    """
+    Extract job listings from Indeed job alert emails.
+
+    Parses HTML from Indeed job alert emails to extract structured
+    job information. Indeed emails typically use table cells or divs
+    for job cards with company/location in subsequent lines.
+
+    Parsing approach:
+    - Finds links with jk= or vjk= query parameters (job keys)
+    - Extracts job details from parent container
+    - Skips rating information and UI elements
+    - Handles multi-line format: Title / Company / Location / Salary
+
+    Args:
+        html: Raw HTML content from Indeed email
+        email_date: ISO format date string when email was received
+
+    Returns:
+        List of job dictionaries with keys:
+        - job_id: Unique identifier
+        - title: Job title
+        - company: Company name
+        - location: Job location
+        - url: Cleaned job URL
+        - source: 'indeed'
+        - raw_text: Preview text
+        - created_at: Email date
+        - email_date: Email date
+
+    Examples:
+        >>> html = '<a href="indeed.com/viewjob?jk=abc123">Software Engineer</a>'
+        >>> jobs = parse_indeed_jobs(html, '2025-01-15T10:00:00')
+        >>> print(jobs[0]['url'])  # "https://www.indeed.com/viewjob?jk=abc123"
+    """
     jobs = []
     soup = BeautifulSoup(html, 'html.parser')
     
@@ -581,7 +751,33 @@ def parse_indeed_jobs(html, email_date):
 
 
 def parse_greenhouse_jobs(html, email_date):
-    """Extract Greenhouse jobs."""
+    """
+    Extract job listings from Greenhouse ATS job alert emails.
+
+    Parses HTML from Greenhouse-powered job boards. Many companies use
+    Greenhouse as their Applicant Tracking System, sending alerts from
+    boards.greenhouse.io or greenhouse.io domains.
+
+    Company extraction strategy:
+    - Extracts company name from boards.greenhouse.io/{company} URL pattern
+    - Converts hyphenated names to title case (e.g., 'acme-corp' → 'Acme Corp')
+
+    Args:
+        html: Raw HTML content from Greenhouse email
+        email_date: ISO format date string when email was received
+
+    Returns:
+        List of job dictionaries with keys:
+        - job_id: Unique identifier
+        - title: Job title
+        - company: Company name (extracted from URL)
+        - location: Job location
+        - url: Cleaned job URL
+        - source: 'greenhouse'
+        - raw_text: Preview text
+        - created_at: Email date
+        - email_date: Email date
+    """
     jobs = []
     soup = BeautifulSoup(html, 'html.parser')
     
@@ -647,7 +843,34 @@ def parse_greenhouse_jobs(html, email_date):
 
 
 def parse_wellfound_jobs(html, email_date):
-    """Extract Wellfound (AngelList) jobs."""
+    """
+    Extract job listings from Wellfound (formerly AngelList) emails.
+
+    Parses HTML from Wellfound startup job alerts. Wellfound focuses
+    on startup and early-stage company positions, often including
+    company size and funding information.
+
+    Special handling:
+    - Looks for company info in format: "Company / 50-100 Employees"
+    - Defaults location to 'Remote' (common for startups)
+    - Handles both wellfound.com and legacy angel.co domains
+
+    Args:
+        html: Raw HTML content from Wellfound email
+        email_date: ISO format date string when email was received
+
+    Returns:
+        List of job dictionaries with keys:
+        - job_id: Unique identifier
+        - title: Job title
+        - company: Company name
+        - location: Job location (often 'Remote')
+        - url: Cleaned job URL
+        - source: 'wellfound'
+        - raw_text: Preview text
+        - created_at: Email date
+        - email_date: Email date
+    """
     jobs = []
     soup = BeautifulSoup(html, 'html.parser')
     
@@ -712,7 +935,38 @@ def parse_wellfound_jobs(html, email_date):
     return jobs
 
 def fetch_wwr_jobs(days_back=7):
-    """Fetch jobs from WeWorkRemotely RSS feeds."""
+    """
+    Fetch remote jobs from WeWorkRemotely RSS feeds.
+
+    Retrieves job listings from multiple WeWorkRemotely category feeds
+    (programming, devops, full-stack). Parses RSS/XML format and filters
+    by publication date.
+
+    Feed categories include:
+    - Remote programming jobs
+    - Remote devops/sysadmin jobs
+    - Remote full-stack programming jobs
+
+    Args:
+        days_back: Only return jobs published within this many days (default: 7)
+
+    Returns:
+        List of job dictionaries with keys:
+        - job_id: Unique identifier
+        - title: Job title (extracted from 'Company: Title' format)
+        - company: Company name
+        - location: 'Remote'
+        - url: Job posting URL
+        - source: 'weworkremotely'
+        - raw_text: Job description text
+        - description: Cleaned job description
+        - created_at: Publication date
+        - email_date: Publication date
+
+    Examples:
+        >>> jobs = fetch_wwr_jobs(days_back=3)
+        >>> print(f"Found {len(jobs)} remote jobs from last 3 days")
+    """
     jobs = []
     cutoff = datetime.now() - timedelta(days=days_back)
     
@@ -775,11 +1029,48 @@ def fetch_wwr_jobs(days_back=7):
                 })
                 
         except Exception as e:
-            print(f"WWR feed error ({feed_url}): {e}")
+            logger.error(f"❌ WWR feed error ({feed_url}): {e}")
     
     return jobs
 
 def scan_emails(days_back=7):
+    """
+    Scan Gmail for job alert emails from multiple sources.
+
+    Searches Gmail inbox for job alerts from known job boards and custom
+    email sources. Tracks scan history to avoid reprocessing emails.
+    Supports incremental scanning using last scan timestamp.
+
+    Scanned sources:
+    - LinkedIn (jobs-noreply, jobalerts-noreply)
+    - Indeed (noreply, alert)
+    - Greenhouse ATS
+    - Wellfound (AngelList)
+    - Custom email sources from database
+    - Generic job board emails (subject-based matching)
+    - Follow-up emails (interviews, rejections, offers)
+
+    Args:
+        days_back: How many days back to scan on first run (default: 7)
+                   Subsequent scans use last scan timestamp from database
+
+    Returns:
+        List of extracted job dictionaries with keys:
+        - job_id: Unique identifier
+        - title: Job title
+        - company: Company name
+        - location: Job location
+        - url: Job posting URL
+        - source: Origin (linkedin, indeed, greenhouse, etc.)
+        - raw_text: Preview/description text
+        - created_at: When job was found
+        - email_date: When email was received
+
+    Examples:
+        >>> jobs = scan_emails(days_back=14)  # First scan looks back 2 weeks
+        >>> print(f"Found {len(jobs)} jobs")
+        >>> jobs = scan_emails()  # Subsequent scan uses last scan time
+    """
     service = get_gmail_service()
     
     # Get last scan date from DB
@@ -796,14 +1087,14 @@ def scan_emails(days_back=7):
             # Add 1 second to avoid re-processing last scan's emails
             last_date = last_date + timedelta(seconds=1)
             after_date = last_date.strftime('%Y/%m/%d')
-            print(f"📅 Scanning emails after last scan: {after_date}")
+            logger.info(f"📅 Scanning emails after last scan: {after_date}")
         except:
             # Fallback if date parsing fails
             after_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y/%m/%d')
-            print(f"⚠️ Date parse failed, scanning last {days_back} days: {after_date}")
+            logger.warning(f"⚠️  Date parse failed, scanning last {days_back} days: {after_date}")
     else:
         after_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y/%m/%d')
-        print(f"🆕 First scan - looking back {days_back} days: {after_date}")
+        logger.info(f"🆕 First scan - looking back {days_back} days: {after_date}")
     
     # Query all job board emails + follow-ups
     queries = [
@@ -852,7 +1143,7 @@ def scan_emails(days_back=7):
         if query_parts:
             custom_query = ' '.join(query_parts) + f' after:{after_date}'
             queries.append(custom_query)
-            print(f"📧 Added custom source: {source_name} -> {custom_query}")
+            logger.info(f"📧 Added custom source: {source_name} -> {custom_query}")
 
     
     all_jobs = []
@@ -888,7 +1179,7 @@ def scan_emails(days_back=7):
                     ])
                     
                     if is_followup:
-                        print(f"📧 Follow-up detected: {subject[:60]}...")
+                        logger.info(f"📧 Follow-up detected: {subject[:60]}...")
                         # TODO: Add follow-up tracking table and logic
                         continue
                     
@@ -913,14 +1204,14 @@ def scan_emails(days_back=7):
                     
                     all_jobs.extend(unique_jobs)
                     if unique_jobs:
-                        print(f"✓ Found {len(unique_jobs)} unique jobs from {query.split('from:')[1].split()[0] if 'from:' in query else 'follow-ups'}")
-                    
+                        logger.info(f"✓ Found {len(unique_jobs)} unique jobs from {query.split('from:')[1].split()[0] if 'from:' in query else 'follow-ups'}")
+
                 except Exception as e:
-                    print(f"Error parsing email {msg_info['id']}: {e}")
+                    logger.error(f"❌ Error parsing email {msg_info['id']}: {e}")
                     continue
-                    
+
         except Exception as e:
-            print(f"Query failed - {query}: {e}")
+            logger.error(f"❌ Query failed - {query}: {e}")
             continue
     
     # Save current scan timestamp (ISO format for consistency)
@@ -932,9 +1223,9 @@ def scan_emails(days_back=7):
     )
     conn.commit()
     conn.close()
-    
-    print(f"✅ Scan complete: {total_emails} emails checked, {len(all_jobs)} unique jobs extracted")
-    print(f"📌 Next scan will query emails after: {current_scan_time}")
+
+    logger.info(f"✅ Scan complete: {total_emails} emails checked, {len(all_jobs)} unique jobs extracted")
+    logger.info(f"📌 Next scan will query emails after: {current_scan_time}")
     return all_jobs
 
 # ============== Follow-Up Email Scanning ==============
@@ -1173,17 +1464,17 @@ def scan_followup_emails(days_back: int = 30) -> List[Dict]:
                             'in_spam': folder == '[Gmail]/Spam'
                         })
 
-                        print(f"📧 {email_type.upper()}: {company} - {subject[:50]}... (spam: {folder == '[Gmail]/Spam'})")
+                        logger.info(f"📧 {email_type.upper()}: {company} - {subject[:50]}... (spam: {folder == '[Gmail]/Spam'})")
 
                     except Exception as e:
-                        print(f"Error parsing follow-up email {msg_id}: {e}")
+                        logger.error(f"❌ Error parsing follow-up email {msg_id}: {e}")
                         continue
 
             except Exception as e:
-                print(f"Query failed - {search_query}: {e}")
+                logger.error(f"❌ Query failed - {search_query}: {e}")
                 continue
 
-    print(f"\n✅ Follow-up scan complete: {len(followups)} emails found")
+    logger.info(f"\n✅ Follow-up scan complete: {len(followups)} emails found")
     return followups
 
 # ============== AI Filtering & Scoring ==============
@@ -1208,7 +1499,7 @@ def load_resumes() -> str:
         if full_path.exists():
             resumes.append(full_path.read_text())
         else:
-            print(f"⚠️  Warning: Resume file not found: {resume_path}")
+            logger.warning(f"⚠️  Warning: Resume file not found: {resume_path}")
 
     if not resumes:
         raise FileNotFoundError(
@@ -1221,8 +1512,25 @@ def load_resumes() -> str:
 
 def migrate_file_resumes_to_db():
     """
-    One-time migration to import existing resume files into the database.
-    Checks if resumes already exist to avoid duplicates.
+    Migrate resume files from filesystem to database storage.
+
+    One-time migration function that imports resumes specified in config.yaml
+    into the resume_variants table. Uses content hashing to detect and skip
+    duplicate resumes.
+
+    Process:
+    - Reads each resume file from CONFIG.resume_files
+    - Generates SHA256 hash of content
+    - Checks database for existing resume with same hash
+    - Creates database entry if new
+    - Extracts resume name from filename
+
+    Returns:
+        Number of resumes successfully migrated
+
+    Examples:
+        >>> migrated_count = migrate_file_resumes_to_db()
+        >>> print(f"Migrated {migrated_count} resume(s)")
     """
     conn = get_db()
     migrated = 0
@@ -1243,7 +1551,7 @@ def migrate_file_resumes_to_db():
         ).fetchone()
 
         if existing:
-            print(f"✓ Resume already in database: {resume_path}")
+            logger.info(f"✓ Resume already in database: {resume_path}")
             continue
 
         # Create resume entry
@@ -1259,13 +1567,13 @@ def migrate_file_resumes_to_db():
         ''', (resume_id, name, str(resume_path), content, content_hash, now, now))
 
         migrated += 1
-        print(f"✓ Migrated resume: {name}")
+        logger.info(f"✓ Migrated resume: {name}")
 
     conn.commit()
     conn.close()
 
     if migrated > 0:
-        print(f"\n✅ Migrated {migrated} resume(s) to database!")
+        logger.info(f"\n✅ Migrated {migrated} resume(s) to database!")
     return migrated
 
 
@@ -1273,8 +1581,27 @@ def load_resumes_from_db() -> List[Dict]:
     """
     Load all active resume variants from the database.
 
+    Retrieves all resumes marked as active (is_active=1) sorted by
+    usage count (most used first) and creation date.
+
     Returns:
-        List of resume dictionaries with id, name, content, etc.
+        List of resume dictionaries with keys:
+        - resume_id: Unique identifier
+        - name: Resume name
+        - content: Full resume text
+        - focus_areas: Comma-separated focus areas
+        - target_roles: Target job roles
+        - file_path: Original file path (if uploaded)
+        - content_hash: SHA256 hash of content
+        - usage_count: Number of times recommended/used
+        - created_at: Creation timestamp
+        - updated_at: Last update timestamp
+        - is_active: Active status (always 1 for returned resumes)
+
+    Examples:
+        >>> resumes = load_resumes_from_db()
+        >>> for resume in resumes:
+        ...     print(f"{resume['name']}: {resume['usage_count']} uses")
     """
     conn = get_db()
     resumes = conn.execute("""
@@ -1290,16 +1617,27 @@ def load_resumes_from_db() -> List[Dict]:
 def get_combined_resume_text() -> str:
     """
     Get combined text from all active resumes for AI analysis.
-    Falls back to file-based loading if no resumes in database.
+
+    Concatenates all active resume variants with separators for use
+    in AI prompts. Allows Claude to see all resume variants and choose
+    the most relevant one for each job analysis.
+
+    Falls back to file-based loading if database is empty (backward
+    compatibility with older setups).
 
     Returns:
-        Combined resume text from all active resumes
+        Combined resume text with '---' separators between variants
+
+    Examples:
+        >>> text = get_combined_resume_text()
+        >>> print(f"Resume text length: {len(text)} characters")
+        >>> # Text format: "Resume 1\n\n---\n\nResume 2\n\n---\n\nResume 3"
     """
     resumes = load_resumes_from_db()
 
     if not resumes:
         # Fallback to file-based loading
-        print("⚠️  No resumes in database, falling back to file-based loading...")
+        logger.warning("⚠️  No resumes in database, falling back to file-based loading...")
         return load_resumes()
 
     return "\n\n---\n\n".join([r['content'] for r in resumes])
@@ -1408,7 +1746,7 @@ Be specific about technical requirements and how the resume matches them."""
         return recommendation
 
     except Exception as e:
-        print(f"Error in resume recommendation: {e}")
+        logger.error(f"❌ Error in resume recommendation: {e}")
         # Fallback: return first resume with low confidence
         return {
             'resume_id': resumes[0]['resume_id'],
@@ -1515,8 +1853,8 @@ Return JSON only:
                 result.get('filter_reason', 'unknown')
             )
     except Exception as e:
-        print(f"AI filter error: {e}")
-    
+        logger.error(f"❌ AI filter error: {e}")
+
     # Default: keep but low score
     return (True, 30, "filter error - kept by default")
 
@@ -1590,7 +1928,7 @@ Return JSON:
         match = re.search(r'\{[\s\S]*\}', response.content[0].text)
         return json.loads(match.group()) if match else {}
     except Exception as e:
-        print(f"Analysis error: {e}")
+        logger.error(f"❌ Analysis error: {e}")
         return {"qualification_score": 0, "should_apply": False, "recommendation": str(e)}
 
 def generate_cover_letter(job: Dict, resume_text: str) -> str:
@@ -2190,6 +2528,21 @@ DASHBOARD_HTML = '''
 
 @app.route('/')
 def dashboard():
+    """
+    Serve the React frontend dashboard.
+
+    Route: GET /
+
+    Serves the built React application from the dist/ folder. The React app
+    provides the user interface for job tracking, resume management, and
+    application tracking.
+
+    Returns:
+        HTML content of the built React app, or error if not built
+
+    Raises:
+        500: If frontend hasn't been built yet
+    """
     # Serve the built React app from dist folder
     dist_index = APP_DIR / 'dist' / 'index.html'
     if dist_index.exists():
@@ -2199,51 +2552,99 @@ def dashboard():
 
 @app.route('/api/jobs')
 def get_jobs():
-    status = request.args.get('status', '')
-    min_score = int(request.args.get('min_score', 0))
-    show_hidden = request.args.get('show_hidden', 'false') == 'true'
-    
-    conn = get_db()
-    query = "SELECT * FROM jobs WHERE is_filtered = 0"
-    params = []
-    
-    if not show_hidden:
-        query += " AND status != 'hidden'"
-    
-    if status:
-        query += " AND status = ?"
-        params.append(status)
-    if min_score:
-        query += " AND baseline_score >= ?"
-        params.append(min_score)
-    
-    # Fetch all matching jobs
-    jobs = [dict(row) for row in conn.execute(query, params).fetchall()]
-    
-    # Calculate weighted scores and sort
-    for job in jobs:
-        job['weighted_score'] = calculate_weighted_score(
-            job.get('baseline_score', 0), 
-            job.get('email_date', job.get('created_at', ''))
-        )
-    
-    jobs.sort(key=lambda x: x['weighted_score'], reverse=True)
-    
-    # Stats
-    all_jobs = [dict(row) for row in conn.execute("SELECT status, baseline_score FROM jobs WHERE is_filtered = 0 AND status != 'hidden'").fetchall()]
-    stats = {
-        'total': len(all_jobs),
-        'new': len([j for j in all_jobs if j['status'] == 'new']),
-        'interested': len([j for j in all_jobs if j['status'] == 'interested']),
-        'applied': len([j for j in all_jobs if j['status'] == 'applied']),
-        'avg_score': sum(j['baseline_score'] or 0 for j in all_jobs) / len(all_jobs) if all_jobs else 0
-    }
-    
-    conn.close()
-    return jsonify({'jobs': jobs, 'stats': stats})
+    """
+    Retrieve jobs with filtering and weighted scoring.
+
+    Route: GET /api/jobs
+
+    Query Parameters:
+        status (str, optional): Filter by job status (new, interested, applied, etc.)
+        min_score (int, optional): Minimum baseline score (0-100)
+        show_hidden (bool, optional): Include hidden jobs (default: false)
+
+    Returns:
+        JSON response with:
+        - jobs: List of job dictionaries with weighted_score calculated
+        - stats: Statistics (total, new, interested, applied, avg_score)
+
+    Jobs are sorted by weighted score (70% qualification, 30% recency).
+
+    Examples:
+        GET /api/jobs?status=new&min_score=70
+        GET /api/jobs?show_hidden=true
+    """
+    try:
+        status = request.args.get('status', '')
+        min_score = int(request.args.get('min_score', 0))
+        show_hidden = request.args.get('show_hidden', 'false') == 'true'
+
+        conn = get_db()
+        query = "SELECT * FROM jobs WHERE is_filtered = 0"
+        params = []
+
+        if not show_hidden:
+            query += " AND status != 'hidden'"
+
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if min_score:
+            query += " AND baseline_score >= ?"
+            params.append(min_score)
+
+        # Fetch all matching jobs
+        jobs = [dict(row) for row in conn.execute(query, params).fetchall()]
+
+        # Calculate weighted scores and sort
+        for job in jobs:
+            job['weighted_score'] = calculate_weighted_score(
+                job.get('baseline_score', 0),
+                job.get('email_date', job.get('created_at', ''))
+            )
+
+        jobs.sort(key=lambda x: x['weighted_score'], reverse=True)
+
+        # Stats
+        all_jobs = [dict(row) for row in conn.execute("SELECT status, baseline_score FROM jobs WHERE is_filtered = 0 AND status != 'hidden'").fetchall()]
+        stats = {
+            'total': len(all_jobs),
+            'new': len([j for j in all_jobs if j['status'] == 'new']),
+            'interested': len([j for j in all_jobs if j['status'] == 'interested']),
+            'applied': len([j for j in all_jobs if j['status'] == 'applied']),
+            'avg_score': sum(j['baseline_score'] or 0 for j in all_jobs) / len(all_jobs) if all_jobs else 0
+        }
+
+        conn.close()
+        return jsonify({'jobs': jobs, 'stats': stats})
+    except ValueError as e:
+        logger.error(f"❌ Invalid parameter in /api/jobs: {e}")
+        return jsonify({'error': 'Invalid parameters'}), 400
+    except Exception as e:
+        logger.error(f"❌ Error in /api/jobs: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/jobs/<job_id>', methods=['PATCH'])
 def update_job(job_id):
+    """
+    Update job fields (status, notes, viewed flag, etc.).
+
+    Route: PATCH /api/jobs/{job_id}
+
+    Request Body (JSON):
+        Any of: status, notes, viewed, applied_date, interview_date
+
+    Behavior:
+        - Updates specified fields in jobs table
+        - Sets updated_at timestamp
+        - Syncs status to linked external_applications if exists
+
+    Returns:
+        JSON: {success: true}
+
+    Examples:
+        PATCH /api/jobs/abc123
+        {"status": "applied", "notes": "Applied via referral"}
+    """
     data = request.json
     conn = get_db()
 
@@ -2271,7 +2672,7 @@ def update_job(job_id):
                 "UPDATE external_applications SET status = ?, updated_at = ? WHERE job_id = ?",
                 (data['status'], datetime.now().isoformat(), job_id)
             )
-            print(f"[Backend] Synced status '{data['status']}' to linked external application")
+            logger.debug(f"[Backend] Synced status '{data['status']}' to linked external application")
 
         conn.commit()
 
@@ -2280,7 +2681,22 @@ def update_job(job_id):
 
 @app.route('/api/jobs/<job_id>', methods=['DELETE'])
 def delete_job(job_id):
-    """Delete a job from the database."""
+    """
+    Delete a job and all associated data.
+
+    Route: DELETE /api/jobs/{job_id}
+
+    Cascading deletes:
+        - Job entry from jobs table
+        - Linked external_applications entries
+        - Resume usage logs for this job
+
+    Returns:
+        JSON: {success: true}
+
+    Examples:
+        DELETE /api/jobs/abc123
+    """
     conn = get_db()
 
     # Delete the job
@@ -2299,7 +2715,33 @@ def delete_job(job_id):
 
 @app.route('/api/scan', methods=['POST'])
 def api_scan():
-    """Scan emails with AI filtering and baseline scoring."""
+    """
+    Scan Gmail for job alerts with AI filtering.
+
+    Route: POST /api/scan
+
+    Process:
+        1. Scans Gmail using scan_emails() function
+        2. Loads user's resume(s) from database
+        3. Runs AI filter on each job (location, seniority match)
+        4. Generates baseline score (1-100)
+        5. Stores jobs in database (marks filtered jobs with is_filtered=1)
+        6. Skips duplicates (same job_id, URL, or company+title)
+
+    Returns:
+        JSON with:
+        - found: Total jobs extracted from emails
+        - new: Jobs added to database
+        - filtered: Jobs filtered out by AI
+        - duplicates: Jobs already in database
+
+    Raises:
+        400: If no resumes found
+
+    Examples:
+        POST /api/scan
+        Response: {"found": 45, "new": 12, "filtered": 28, "duplicates": 5}
+    """
     jobs = scan_emails()
     resume_text = load_resumes()
     
@@ -2322,43 +2764,43 @@ def api_scan():
             """, (job['job_id'], job['url'], job['company'], job['title'])).fetchone()
             if existing:
                 duplicate_count += 1
-                print(f"⏭️  Skipping duplicate: {job['title'][:50]}")
+                logger.info(f"⏭️  Skipping duplicate: {job['title'][:50]}")
                 continue
-            
+
             # AI filter and baseline score
             keep, baseline_score, reason = ai_filter_and_score(job, resume_text)
-            
+
             if keep:
                 conn.execute('''
-                    INSERT INTO jobs (job_id, title, company, location, url, source, raw_text, 
+                    INSERT INTO jobs (job_id, title, company, location, url, source, raw_text,
                                      baseline_score, created_at, updated_at, email_date, is_filtered)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                ''', (job['job_id'], job['title'], job['company'], job['location'], 
+                ''', (job['job_id'], job['title'], job['company'], job['location'],
                       job['url'], job['source'], job['raw_text'], baseline_score,
                       job['created_at'], datetime.now().isoformat(), job.get('email_date', job['created_at'])))
                 conn.commit()  # Commit immediately
                 new_count += 1
-                print(f"✓ Kept: {job['title'][:50]} - Score {baseline_score} - {reason}")
+                logger.info(f"✓ Kept: {job['title'][:50]} - Score {baseline_score} - {reason}")
             else:
                 # Store filtered jobs but mark them
                 conn.execute('''
-                    INSERT INTO jobs (job_id, title, company, location, url, source, raw_text, 
+                    INSERT INTO jobs (job_id, title, company, location, url, source, raw_text,
                                      baseline_score, created_at, updated_at, email_date, is_filtered, notes)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-                ''', (job['job_id'], job['title'], job['company'], job['location'], 
+                ''', (job['job_id'], job['title'], job['company'], job['location'],
                       job['url'], job['source'], job['raw_text'], baseline_score,
                       job['created_at'], datetime.now().isoformat(), job.get('email_date', job['created_at']), reason))
                 conn.commit()  # Commit immediately
                 filtered_count += 1
-                print(f"✗ Filtered: {job['title'][:50]} - {reason}")
+                logger.info(f"✗ Filtered: {job['title'][:50]} - {reason}")
     finally:
         conn.close()
-    
-    print(f"\n📊 Scan Summary:")
-    print(f"   - Found: {len(jobs)} jobs")
-    print(f"   - New & kept: {new_count}")
-    print(f"   - Filtered: {filtered_count}")
-    print(f"   - Duplicates skipped: {duplicate_count}")
+
+    logger.info(f"\n📊 Scan Summary:")
+    logger.info(f"   - Found: {len(jobs)} jobs")
+    logger.info(f"   - New & kept: {new_count}")
+    logger.info(f"   - Filtered: {filtered_count}")
+    logger.info(f"   - Duplicates skipped: {duplicate_count}")
     
     return jsonify({
         'found': len(jobs), 
@@ -2369,7 +2811,31 @@ def api_scan():
 
 @app.route('/api/analyze', methods=['POST'])
 def api_analyze():
-    """Full analysis on jobs that passed baseline filter."""
+    """
+    Run full AI analysis on unanalyzed jobs.
+
+    Route: POST /api/analyze
+
+    Process:
+        1. Finds jobs where score=0 or NULL (not yet analyzed)
+        2. Runs detailed analyze_job() on each
+        3. Stores qualification_score and detailed analysis
+        4. Sets status to 'interested' if should_apply=true
+
+    Only analyzes jobs that:
+        - Passed initial AI filter (is_filtered=0)
+        - Don't have a qualification score yet
+
+    Returns:
+        JSON: {analyzed: number of jobs analyzed}
+
+    Raises:
+        400: If no resumes found
+
+    Examples:
+        POST /api/analyze
+        Response: {"analyzed": 8}
+    """
     resume_text = load_resumes()
     if not resume_text:
         return jsonify({'error': 'No resumes found'}), 400
@@ -2380,7 +2846,7 @@ def api_analyze():
     ).fetchall()]
     
     for job in jobs:
-        print(f"Analyzing: {job['title']}")
+        logger.info(f"Analyzing: {job['title']}")
         analysis = analyze_job(job, resume_text)
         
         # Only change status if it's still 'new', otherwise preserve user's choice
@@ -2401,7 +2867,30 @@ def api_analyze():
 
 @app.route('/api/score-jobs', methods=['POST'])
 def api_score_jobs():
-    """Score all jobs that don't have scores yet based on qualifications and job title match."""
+    """
+    Re-score existing jobs that lack baseline scores.
+
+    Route: POST /api/score-jobs
+
+    Use case: Backfill scores for old jobs or jobs imported without scoring.
+
+    Process:
+        1. Finds jobs with score=0 or NULL and is_filtered=0
+        2. Runs ai_filter_and_score() on each
+        3. Updates score and notes with reasoning
+
+    Returns:
+        JSON with:
+        - scored: Number of jobs scored
+        - total: Total jobs found needing scores
+
+    Raises:
+        400: If no resumes found
+
+    Examples:
+        POST /api/score-jobs
+        Response: {"scored": 15, "total": 15}
+    """
     resume_text = load_resumes()
     if not resume_text:
         return jsonify({'error': 'No resumes found'}), 400
@@ -2425,9 +2914,9 @@ def api_score_jobs():
             )
             conn.commit()
             scored_count += 1
-            print(f"✓ Scored: {job['title'][:50]} - Score {baseline_score}")
+            logger.info(f"✓ Scored: {job['title'][:50]} - Score {baseline_score}")
         except Exception as e:
-            print(f"Error scoring job {job['job_id']}: {e}")
+            logger.error(f"❌ Error scoring job {job['job_id']}: {e}")
             continue
 
     conn.close()
@@ -2436,8 +2925,36 @@ def api_score_jobs():
 @app.route('/api/scan-followups', methods=['POST'])
 def api_scan_followups():
     """
-    Scan Gmail for follow-up emails (interviews, rejections, offers).
-    Automatically updates job statuses and stores follow-ups in database.
+    Scan Gmail for application follow-up emails.
+
+    Route: POST /api/scan-followups
+
+    Scans last 30 days of Gmail (including spam folder) for:
+        - Interview requests
+        - Rejection emails
+        - Job offers
+        - Application confirmations
+        - Coding assessments
+
+    Process:
+        1. Calls scan_followup_emails() to extract follow-ups
+        2. Classifies each email type using keyword matching
+        3. Fuzzy matches company names to jobs in database
+        4. Stores in followups table
+        5. Auto-updates job status if matched:
+           - 'rejection' → status='rejected'
+           - 'interview' → status='interviewing'
+           - 'offer' → status='offered'
+
+    Returns:
+        JSON with:
+        - found: Total follow-ups found
+        - new: New follow-ups added to database
+        - updated_jobs: Number of jobs auto-updated
+
+    Examples:
+        POST /api/scan-followups
+        Response: {"found": 12, "new": 8, "updated_jobs": 5}
     """
     followups = scan_followup_emails(days_back=30)
 
@@ -2490,7 +3007,7 @@ def api_scan_followups():
                         )
                         conn.commit()
                         updated_jobs += 1
-                        print(f"✓ Updated {followup['company']} → {new_status}")
+                        logger.info(f"✓ Updated {followup['company']} → {new_status}")
 
     finally:
         conn.close()
@@ -2503,7 +3020,27 @@ def api_scan_followups():
 
 @app.route('/api/followups', methods=['GET'])
 def api_get_followups():
-    """Get all follow-up emails with associated job info."""
+    """
+    Retrieve all follow-up emails with statistics.
+
+    Route: GET /api/followups
+
+    Returns:
+        JSON with:
+        - followups: List of follow-up dictionaries (with job title/company if linked)
+        - stats: Statistics object with:
+          - total: Total follow-ups
+          - interviews: Count of interview requests
+          - rejections: Count of rejections
+          - offers: Count of offers
+          - assessments: Count of coding challenges
+          - response_rate: Percentage (total_followups / applied_jobs * 100)
+
+    Limit: Returns last 100 follow-ups only
+
+    Examples:
+        GET /api/followups
+    """
     conn = get_db()
 
     followups = conn.execute('''
@@ -2539,6 +3076,30 @@ def api_get_followups():
 
 @app.route('/api/jobs/<job_id>/cover-letter', methods=['POST'])
 def api_cover_letter(job_id):
+    """
+    Generate tailored cover letter for a specific job.
+
+    Route: POST /api/jobs/{job_id}/cover-letter
+
+    Uses Claude AI to create a personalized cover letter based on:
+        - Job description and requirements
+        - User's resume content
+        - Previous AI analysis strengths
+
+    Generated cover letters:
+        - 3-4 paragraphs, under 350 words
+        - Professional but enthusiastic tone
+        - Only cite actual resume experience
+        - Include specific examples and metrics
+
+    Stores generated cover letter in database for future reference.
+
+    Returns:
+        JSON: {cover_letter: string}
+
+    Examples:
+        POST /api/jobs/abc123/cover-letter
+    """
     resume_text = load_resumes()
     conn = get_db()
     job = dict(conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone())
@@ -2554,7 +3115,39 @@ def api_cover_letter(job_id):
 
 @app.route('/api/capture', methods=['POST'])
 def api_capture():
-    """Receive job from browser extension."""
+    """
+    Capture job from Chrome extension.
+
+    Route: POST /api/capture
+
+    Request Body (JSON):
+        - url: Job posting URL (required)
+        - title: Job title (required)
+        - company: Company name
+        - location: Job location (default: 'Remote')
+        - description: Job description text
+        - source: Source platform (auto-detected from URL if not provided)
+
+    Process:
+        1. Cleans job URL to remove tracking parameters
+        2. Auto-detects source from URL (linkedin, indeed, etc.)
+        3. Generates job_id from URL/title/company
+        4. If job exists: Updates description (if missing)
+        5. If new job: Runs AI scoring and saves to database
+
+    Returns:
+        JSON with:
+        - status: 'created' or 'updated'
+        - job_id: Generated job identifier
+        - baseline_score: AI-generated score (if created)
+
+    Raises:
+        400: If url or title missing
+
+    Examples:
+        POST /api/capture
+        {"url": "linkedin.com/jobs/123", "title": "Engineer", "company": "Acme"}
+    """
     data = request.json
     
     url = clean_job_url(data.get('url', ''))
@@ -2614,7 +3207,39 @@ def api_capture():
 
 @app.route('/api/analyze-instant', methods=['POST'])
 def api_analyze_instant():
-    """Instant analysis for browser extension with strict accuracy."""
+    """
+    Instant job analysis for Chrome extension.
+
+    Route: POST /api/analyze-instant
+
+    Request Body (JSON):
+        - title: Job title (required)
+        - company: Company name
+        - description: Job description (required)
+
+    Uses Claude AI to provide immediate qualification analysis without
+    saving to database. Designed for quick feedback while browsing jobs.
+
+    Analysis includes:
+        - qualification_score (1-100)
+        - should_apply (boolean)
+        - strengths (matching skills from resume)
+        - gaps (missing requirements)
+        - recommendation (honest assessment)
+        - resume_to_use (which variant to submit)
+
+    Returns:
+        JSON with:
+        - analysis: Full analysis object
+        - job: Echo of job title/company
+
+    Raises:
+        400: If title or description missing, or no resumes found
+
+    Examples:
+        POST /api/analyze-instant
+        {"title": "Software Engineer", "company": "Acme", "description": "..."}
+    """
     data = request.json
     
     title = data.get('title', '')
@@ -2687,10 +3312,35 @@ Return ONLY valid JSON:
 
 @app.route('/api/wwr', methods=['POST'])
 def api_scan_wwr():
-    """Scan WWR with AI filtering."""
-    print("🌐 Starting WWR scan...")
+    """
+    Scan WeWorkRemotely RSS feeds with AI filtering.
+
+    Route: POST /api/wwr
+
+    Process:
+        1. Fetches jobs from WWR RSS feeds (last 7 days)
+        2. Loads user resumes
+        3. Runs AI filter on each job
+        4. Saves jobs that pass filter to database
+        5. Marks filtered jobs with is_filtered=1
+
+    Returns:
+        JSON with:
+        - found: Total jobs from RSS feeds
+        - new: Jobs added to database
+        - filtered: Jobs filtered out by AI
+        - duplicates: Jobs already in database
+
+    Raises:
+        400: If no resumes found
+
+    Examples:
+        POST /api/wwr
+        Response: {"found": 30, "new": 8, "filtered": 18, "duplicates": 4}
+    """
+    logger.info("🌐 Starting WWR scan...")
     jobs = fetch_wwr_jobs()
-    print(f"📥 Fetched {len(jobs)} jobs from RSS feeds")
+    logger.info(f"📥 Fetched {len(jobs)} jobs from RSS feeds")
     
     resume_text = load_resumes()
     
@@ -2704,47 +3354,78 @@ def api_scan_wwr():
     
     try:
         for i, job in enumerate(jobs, 1):
-            print(f"Processing {i}/{len(jobs)}: {job['title'][:50]}...")
-            
+            logger.info(f"Processing {i}/{len(jobs)}: {job['title'][:50]}...")
+
             existing = conn.execute("SELECT 1 FROM jobs WHERE job_id = ?", (job['job_id'],)).fetchone()
             if existing:
                 duplicate_count += 1
-                print(f"  ⏭️  Duplicate")
+                logger.info(f"  ⏭️  Duplicate")
                 continue
-            
+
             keep, baseline_score, reason = ai_filter_and_score(job, resume_text)
-            
+
             if keep:
                 conn.execute('''
-                    INSERT INTO jobs (job_id, title, company, location, url, source, raw_text, 
+                    INSERT INTO jobs (job_id, title, company, location, url, source, raw_text,
                                      baseline_score, created_at, updated_at, email_date, is_filtered)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                ''', (job['job_id'], job['title'], job['company'], job['location'], 
+                ''', (job['job_id'], job['title'], job['company'], job['location'],
                       job['url'], job['source'], job.get('description', job['raw_text']), baseline_score,
                       job['created_at'], datetime.now().isoformat(), job.get('email_date', job['created_at'])))
                 conn.commit()
                 new_count += 1
-                print(f"  ✓ Kept - Score {baseline_score}")
+                logger.info(f"  ✓ Kept - Score {baseline_score}")
             else:
                 conn.execute('''
-                    INSERT INTO jobs (job_id, title, company, location, url, source, raw_text, 
+                    INSERT INTO jobs (job_id, title, company, location, url, source, raw_text,
                                      baseline_score, created_at, updated_at, email_date, is_filtered, notes)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-                ''', (job['job_id'], job['title'], job['company'], job['location'], 
+                ''', (job['job_id'], job['title'], job['company'], job['location'],
                       job['url'], job['source'], job.get('description', job['raw_text']), baseline_score,
                       job['created_at'], datetime.now().isoformat(), job.get('email_date', job['created_at']), reason))
                 conn.commit()
                 filtered_count += 1
-                print(f"  ✗ Filtered - {reason[:50]}")
+                logger.info(f"  ✗ Filtered - {reason[:50]}")
     finally:
         conn.close()
-    
-    print(f"\n✅ WWR Scan Complete: {new_count} new, {filtered_count} filtered, {duplicate_count} duplicates")
+
+    logger.info(f"\n✅ WWR Scan Complete: {new_count} new, {filtered_count} filtered, {duplicate_count} duplicates")
     return jsonify({'found': len(jobs), 'new': new_count, 'filtered': filtered_count, 'duplicates': duplicate_count})
 
 @app.route('/api/generate-cover-letter', methods=['POST'])
 def api_generate_cover_letter():
-    """Generate cover letter for extension with accurate resume matching."""
+    """
+    Generate cover letter from Chrome extension.
+
+    Route: POST /api/generate-cover-letter
+
+    Request Body (JSON):
+        - job: Job object with title, company, description
+        - analysis: Previous AI analysis with strengths/gaps
+
+    Creates tailored cover letter using:
+        - Job description
+        - User's resume(s)
+        - Verified strengths from analysis
+
+    Cover letter format:
+        - 3-4 paragraphs
+        - Under 350 words
+        - Professional but enthusiastic
+        - Only cites actual resume content
+        - Specific examples with metrics
+
+    Returns:
+        JSON: {cover_letter: string}
+
+    Raises:
+        400: If no resumes found
+        500: If AI generation fails
+
+    Examples:
+        POST /api/generate-cover-letter
+        {"job": {...}, "analysis": {...}}
+    """
     data = request.json
     job = data.get('job', {})
     analysis = data.get('analysis', {})
@@ -2794,7 +3475,34 @@ Write only the cover letter text (no subject line):"""
 
 @app.route('/api/generate-answer', methods=['POST'])
 def api_generate_answer():
-    """Generate interview answer with accurate resume references."""
+    """
+    Generate interview answer using AI.
+
+    Route: POST /api/generate-answer
+
+    Request Body (JSON):
+        - question: Interview question (required)
+        - job: Job context (title, company, description)
+        - analysis: Previous analysis with strengths/gaps
+
+    Uses Claude AI to craft strong interview answers:
+        - Only cites actual resume projects/experience
+        - Uses specific examples with concrete details
+        - 2-3 paragraphs, 150-200 words
+        - Natural, conversational tone
+        - Honest about gaps but frames positively
+
+    Returns:
+        JSON: {answer: string}
+
+    Raises:
+        400: If question missing or no resumes found
+        500: If AI generation fails
+
+    Examples:
+        POST /api/generate-answer
+        {"question": "Tell me about a time...", "job": {...}, "analysis": {...}}
+    """
     data = request.json
     job = data.get('job', {})
     question = data.get('question')
@@ -2847,6 +3555,20 @@ Generate 2-3 paragraph answer (150-200 words):"""
 
 @app.route('/api/watchlist', methods=['GET'])
 def get_watchlist():
+    """
+    Retrieve all watchlist companies.
+
+    Route: GET /api/watchlist
+
+    Returns companies user wants to monitor for future openings,
+    sorted by most recently added.
+
+    Returns:
+        JSON: {items: List of watchlist dictionaries}
+
+    Examples:
+        GET /api/watchlist
+    """
     conn = get_db()
     items = [dict(row) for row in conn.execute(
         "SELECT * FROM watchlist ORDER BY created_at DESC"
@@ -2856,6 +3578,29 @@ def get_watchlist():
 
 @app.route('/api/watchlist', methods=['POST'])
 def add_watchlist():
+    """
+    Add company to watchlist.
+
+    Route: POST /api/watchlist
+
+    Request Body (JSON):
+        - company: Company name (required)
+        - url: Career page URL (optional)
+        - notes: Notes about when to check back (optional)
+
+    Use case: Track companies not currently hiring or requiring
+    specific timing to apply.
+
+    Returns:
+        JSON: {success: true}
+
+    Raises:
+        400: If company name missing
+
+    Examples:
+        POST /api/watchlist
+        {"company": "Acme Corp", "url": "acme.com/careers", "notes": "Check Q2"}
+    """
     data = request.json
     company = data.get('company', '').strip()
     url = data.get('url', '').strip()
@@ -2875,6 +3620,17 @@ def add_watchlist():
 
 @app.route('/api/watchlist/<int:watch_id>', methods=['DELETE'])
 def delete_watchlist(watch_id):
+    """
+    Remove company from watchlist.
+
+    Route: DELETE /api/watchlist/{watch_id}
+
+    Returns:
+        JSON: {success: true}
+
+    Examples:
+        DELETE /api/watchlist/5
+    """
     conn = get_db()
     conn.execute("DELETE FROM watchlist WHERE id = ?", (watch_id,))
     conn.commit()
@@ -3028,7 +3784,7 @@ def get_external_applications():
     Get all external applications with optional filtering.
     Query params: status, company, source
     """
-    print(f"[Backend] GET /api/external-applications - Query params: {dict(request.args)}")
+    logger.debug(f"[Backend] GET /api/external-applications - Query params: {dict(request.args)}")
     conn = get_db()
 
     # Build query with optional filters
@@ -3052,7 +3808,7 @@ def get_external_applications():
     applications = [dict(row) for row in conn.execute(query, params).fetchall()]
     conn.close()
 
-    print(f"[Backend] Returning {len(applications)} external applications")
+    logger.debug(f"[Backend] Returning {len(applications)} external applications")
     return jsonify({'applications': applications})
 
 @app.route('/api/external-applications', methods=['POST'])
@@ -3066,19 +3822,19 @@ def create_external_application():
     2. An entry in the jobs table (so it appears in the main job list with status='applied')
     """
     data = request.json
-    print(f"[Backend] POST /api/external-applications - Received data: {data}")
+    logger.debug(f"[Backend] POST /api/external-applications - Received data: {data}")
 
     # Validate required fields
     required_fields = ['title', 'company', 'applied_date', 'source']
     for field in required_fields:
         if not data.get(field):
-            print(f"[Backend] Validation failed: {field} is missing")
+            logger.warning(f"[Backend] Validation failed: {field} is missing")
             return jsonify({'error': f'{field} is required'}), 400
 
     # Generate unique IDs
     app_id = str(uuid.uuid4())[:16]
     job_id = str(uuid.uuid4())[:16]  # Create a new job_id for the job entry
-    print(f"[Backend] Generated app_id: {app_id}, job_id: {job_id}")
+    logger.debug(f"[Backend] Generated app_id: {app_id}, job_id: {job_id}")
 
     # Get optional fields
     location = data.get('location', '')
@@ -3110,7 +3866,7 @@ def create_external_application():
             0,  # Default baseline score
             now, now
         ))
-        print(f"[Backend] Created job entry with job_id: {job_id}")
+        logger.debug(f"[Backend] Created job entry with job_id: {job_id}")
 
         # Then, create the external application entry linked to the job
         conn.execute('''
@@ -3124,13 +3880,13 @@ def create_external_application():
             application_method, data['applied_date'], contact_name, contact_email,
             status, follow_up_date, notes, now, now, 1  # is_linked_to_job = 1
         ))
-        print(f"[Backend] Created external application entry linked to job_id: {job_id}")
+        logger.debug(f"[Backend] Created external application entry linked to job_id: {job_id}")
 
         conn.commit()
         conn.close()
-        print(f"[Backend] Successfully inserted external application and job: {data['title']} at {data['company']}")
+        logger.info(f"[Backend] Successfully inserted external application and job: {data['title']} at {data['company']}")
     except Exception as e:
-        print(f"[Backend] Database error: {str(e)}")
+        logger.error(f"❌ [Backend] Database error: {str(e)}")
         return jsonify({'error': f'Database error: {str(e)}'}), 500
 
     return jsonify({'success': True, 'app_id': app_id, 'job_id': job_id})
@@ -3191,7 +3947,7 @@ def update_external_application(app_id):
                     "UPDATE jobs SET status = ?, updated_at = ? WHERE job_id = ?",
                     (data['status'], datetime.now().isoformat(), app['job_id'])
                 )
-                print(f"[Backend] Synced status '{data['status']}' to linked job: {app['job_id']}")
+                logger.debug(f"[Backend] Synced status '{data['status']}' to linked job: {app['job_id']}")
 
         conn.commit()
 
@@ -3215,7 +3971,7 @@ def delete_external_application(app_id):
     # If there's a linked job, delete it too
     if app and app['job_id']:
         conn.execute("DELETE FROM jobs WHERE job_id = ?", (app['job_id'],))
-        print(f"[Backend] Deleted linked job: {app['job_id']}")
+        logger.debug(f"[Backend] Deleted linked job: {app['job_id']}")
 
     conn.commit()
     conn.close()
@@ -3225,15 +3981,15 @@ def delete_external_application(app_id):
 @app.route('/api/resumes', methods=['GET'])
 def get_resumes():
     """Get all resume variants."""
-    print("[Backend] GET /api/resumes")
+    logger.debug("[Backend] GET /api/resumes")
     resumes = load_resumes_from_db()
-    print(f"[Backend] Returning {len(resumes)} resumes")
+    logger.debug(f"[Backend] Returning {len(resumes)} resumes")
     return jsonify({'resumes': resumes})
 
 @app.route('/api/resumes/<resume_id>', methods=['GET'])
 def get_resume(resume_id):
     """Get a specific resume by ID."""
-    print(f"[Backend] GET /api/resumes/{resume_id}")
+    logger.debug(f"[Backend] GET /api/resumes/{resume_id}")
     conn = get_db()
     resume = conn.execute(
         "SELECT * FROM resume_variants WHERE resume_id = ?",
@@ -3252,7 +4008,7 @@ def create_resume():
     Create a new resume variant.
     Accepts either file upload or direct content.
     """
-    print("[Backend] POST /api/resumes")
+    logger.debug("[Backend] POST /api/resumes")
     data = request.json
 
     # Validate required fields
@@ -3301,11 +4057,11 @@ def create_resume():
         conn.commit()
         conn.close()
 
-        print(f"[Backend] Created resume: {data['name']}")
+        logger.info(f"[Backend] Created resume: {data['name']}")
         return jsonify({'success': True, 'resume_id': resume_id})
 
     except Exception as e:
-        print(f"[Backend] Error creating resume: {e}")
+        logger.error(f"❌ [Backend] Error creating resume: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/resumes/upload', methods=['POST'])
@@ -3313,7 +4069,7 @@ def upload_resume():
     """
     Upload a resume file (PDF, TXT, or MD) and extract text.
     """
-    print("[Backend] POST /api/resumes/upload")
+    logger.debug("[Backend] POST /api/resumes/upload")
 
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -3394,7 +4150,7 @@ def upload_resume():
         conn.commit()
         conn.close()
 
-        print(f"[Backend] Uploaded resume: {name} ({len(resume_text)} chars)")
+        logger.info(f"[Backend] Uploaded resume: {name} ({len(resume_text)} chars)")
         return jsonify({
             'success': True,
             'resume_id': resume_id,
@@ -3404,7 +4160,7 @@ def upload_resume():
         })
 
     except Exception as e:
-        print(f"[Backend] Error uploading resume: {e}")
+        logger.error(f"❌ [Backend] Error uploading resume: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -3412,7 +4168,7 @@ def upload_resume():
 @app.route('/api/resumes/<resume_id>', methods=['PATCH'])
 def update_resume(resume_id):
     """Update resume metadata (not content - that requires new variant)."""
-    print(f"[Backend] PATCH /api/resumes/{resume_id}")
+    logger.debug(f"[Backend] PATCH /api/resumes/{resume_id}")
     data = request.json
     conn = get_db()
 
@@ -3436,13 +4192,13 @@ def update_resume(resume_id):
         conn.commit()
 
     conn.close()
-    print(f"[Backend] Updated resume: {resume_id}")
+    logger.info(f"[Backend] Updated resume: {resume_id}")
     return jsonify({'success': True})
 
 @app.route('/api/resumes/<resume_id>', methods=['DELETE'])
 def delete_resume(resume_id):
     """Soft delete a resume (sets is_active = 0)."""
-    print(f"[Backend] DELETE /api/resumes/{resume_id}")
+    logger.debug(f"[Backend] DELETE /api/resumes/{resume_id}")
     conn = get_db()
 
     conn.execute(
@@ -3453,14 +4209,14 @@ def delete_resume(resume_id):
     conn.commit()
     conn.close()
 
-    print(f"[Backend] Deactivated resume: {resume_id}")
+    logger.info(f"[Backend] Deactivated resume: {resume_id}")
     return jsonify({'success': True})
 
 # ============== Resume Recommendations ==============
 @app.route('/api/jobs/<job_id>/recommend-resume', methods=['POST'])
 def get_resume_recommendation(job_id):
     """Get AI resume recommendation for a specific job."""
-    print(f"[Backend] POST /api/jobs/{job_id}/recommend-resume")
+    logger.debug(f"[Backend] POST /api/jobs/{job_id}/recommend-resume")
 
     conn = get_db()
     job = conn.execute(
@@ -3479,7 +4235,7 @@ def get_resume_recommendation(job_id):
         try:
             cached_rec = json.loads(job_dict['resume_recommendation'])
             conn.close()
-            print(f"[Backend] Returning cached recommendation for {job_id}")
+            logger.debug(f"[Backend] Returning cached recommendation for {job_id}")
             return jsonify({'recommendation': cached_rec, 'cached': True})
         except:
             pass  # If parsing fails, generate new recommendation
@@ -3535,12 +4291,12 @@ def get_resume_recommendation(job_id):
         conn.commit()
         conn.close()
 
-        print(f"[Backend] Generated resume recommendation for {job_id}: {recommendation['resume_name']}")
+        logger.info(f"[Backend] Generated resume recommendation for {job_id}: {recommendation['resume_name']}")
         return jsonify({'recommendation': recommendation, 'cached': False})
 
     except Exception as e:
         conn.close()
-        print(f"[Backend] Error generating recommendation: {e}")
+        logger.error(f"❌ [Backend] Error generating recommendation: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/jobs/recommend-resumes-batch', methods=['POST'])
@@ -3549,7 +4305,7 @@ def batch_recommend_resumes():
     Generate resume recommendations for multiple jobs in batch.
     Processes up to 100 jobs with rate limiting.
     """
-    print("[Backend] POST /api/jobs/recommend-resumes-batch")
+    logger.debug("[Backend] POST /api/jobs/recommend-resumes-batch")
     data = request.json
     job_ids = data.get('job_ids', [])
 
@@ -3648,13 +4404,13 @@ def batch_recommend_resumes():
 
         except Exception as e:
             errors.append({'job_id': job_id, 'error': str(e)})
-            print(f"[Backend] Error processing {job_id}: {e}")
+            logger.error(f"❌ [Backend] Error processing {job_id}: {e}")
 
     conn.commit()
     conn.close()
 
     success_count = len([r for r in results if r['status'] == 'success'])
-    print(f"[Backend] Batch recommendation complete: {success_count}/{len(job_ids)} successful")
+    logger.info(f"[Backend] Batch recommendation complete: {success_count}/{len(job_ids)} successful")
 
     return jsonify({
         'success': True,
@@ -3674,7 +4430,7 @@ def research_jobs():
     Use Claude AI to research and recommend jobs based on user's resume and location preferences.
     Generates 5-10 job recommendations with company names, roles, and why they're a good fit.
     """
-    print("[Backend] POST /api/research-jobs - Starting Claude job research")
+    logger.debug("[Backend] POST /api/research-jobs - Starting Claude job research")
 
     try:
         # Load resumes from database
@@ -3765,7 +4521,7 @@ Focus on real, reputable companies and current in-demand roles. Be specific and 
 
         recommendations = json.loads(response_text)
 
-        print(f"[Backend] Claude generated {len(recommendations)} job recommendations")
+        logger.info(f"[Backend] Claude generated {len(recommendations)} job recommendations")
 
         # Save recommendations to database as "researched" jobs
         conn = get_db()
@@ -3785,7 +4541,7 @@ Focus on real, reputable companies and current in-demand roles. Be specific and 
             ).fetchone()
 
             if existing:
-                print(f"[Backend] Skipping duplicate: {rec['title']} at {rec['company']}")
+                logger.debug(f"[Backend] Skipping duplicate: {rec['title']} at {rec['company']}")
                 continue
 
             # Create analysis JSON
@@ -3841,7 +4597,7 @@ Focus on real, reputable companies and current in-demand roles. Be specific and 
         conn.commit()
         conn.close()
 
-        print(f"[Backend] Saved {len(saved_jobs)} new research jobs to database")
+        logger.info(f"[Backend] Saved {len(saved_jobs)} new research jobs to database")
 
         return jsonify({
             'success': True,
@@ -3851,7 +4607,7 @@ Focus on real, reputable companies and current in-demand roles. Be specific and 
         })
 
     except Exception as e:
-        print(f"[Backend] Error in job research: {str(e)}")
+        logger.error(f"❌ [Backend] Error in job research: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Research failed: {str(e)}'}), 500
@@ -3862,7 +4618,7 @@ def research_jobs_for_resume(resume_id):
     Research jobs tailored specifically to a single resume.
     Uses Claude AI to find 5-10 jobs that match this resume's focus areas and target roles.
     """
-    print(f"[Backend] POST /api/research-jobs/{resume_id}")
+    logger.debug(f"[Backend] POST /api/research-jobs/{resume_id}")
 
     try:
         conn = get_db()
@@ -3881,9 +4637,9 @@ def research_jobs_for_resume(resume_id):
         focus_areas = resume['focus_areas'] or 'Not specified'
         target_roles = resume['target_roles'] or 'Not specified'
 
-        print(f"[Backend] Researching jobs for resume: {resume_name}")
-        print(f"  Focus areas: {focus_areas}")
-        print(f"  Target roles: {target_roles}")
+        logger.info(f"[Backend] Researching jobs for resume: {resume_name}")
+        logger.info(f"  Focus areas: {focus_areas}")
+        logger.info(f"  Target roles: {target_roles}")
 
         # Build research prompt tailored to this specific resume
         research_prompt = f"""You are a job search assistant. Research and recommend specific job opportunities for a candidate based on their resume.
@@ -3953,7 +4709,7 @@ Focus on roles that specifically match the focus areas and target roles for THIS
 
         recommendations = json.loads(response_text)
 
-        print(f"[Backend] Claude generated {len(recommendations)} job recommendations for {resume_name}")
+        logger.info(f"[Backend] Claude generated {len(recommendations)} job recommendations for {resume_name}")
 
         # Save recommendations to database
         saved_jobs = []
@@ -3972,7 +4728,7 @@ Focus on roles that specifically match the focus areas and target roles for THIS
             ).fetchone()
 
             if existing:
-                print(f"[Backend] Skipping duplicate: {rec['title']} at {rec['company']}")
+                logger.debug(f"[Backend] Skipping duplicate: {rec['title']} at {rec['company']}")
                 continue
 
             # Create analysis JSON
@@ -4035,7 +4791,7 @@ Focus on roles that specifically match the focus areas and target roles for THIS
         })
 
     except Exception as e:
-        print(f"[Backend] Error in resume-specific job research: {str(e)}")
+        logger.error(f"❌ [Backend] Error in resume-specific job research: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Research failed: {str(e)}'}), 500
@@ -4105,35 +4861,35 @@ if __name__ == '__main__':
     RESUMES_DIR.mkdir(exist_ok=True)
 
     # Create automatic backup on startup
-    print("🔄 Creating automatic backup...")
+    logger.info("🔄 Creating automatic backup...")
     if backup_on_startup(DB_PATH, max_backups=10):
-        print("✅ Backup created successfully")
+        logger.info("✅ Backup created successfully")
     else:
-        print("⚠️  Backup skipped (database may not exist yet)")
+        logger.warning("⚠️  Backup skipped (database may not exist yet)")
 
     # Migrate existing resumes from files to database
     try:
         migrate_file_resumes_to_db()
     except Exception as e:
-        print(f"⚠️  Resume migration skipped: {e}")
+        logger.warning(f"⚠️  Resume migration skipped: {e}")
 
     # Display startup info
-    print("\n" + "="*60)
-    print("🐷 Hammy the Hire Tracker - Go HAM on Your Job Search!")
-    print("="*60)
-    print(f"\n👤 User: {CONFIG.user_name}")
-    print(f"📧 Email: {CONFIG.user_email}")
-    print(f"📄 Resumes loaded: {len(CONFIG.resume_files)}")
-    print(f"\n📁 Configuration: {APP_DIR / 'config.yaml'}")
-    print(f"📁 Database: {DB_PATH}")
-    print(f"📁 Gmail credentials: {CREDENTIALS_FILE}")
-    print(f"\n💡 Hammy's Quick Start Guide:")
-    print(f"   1. Click '📧 Scan Gmail' to import job alerts")
-    print(f"   2. Click '🤖 Analyze All' for AI analysis")
-    print(f"   3. Click '📬 Scan Follow-Ups' to track responses")
-    print(f"   4. Use the Chrome extension for instant analysis")
-    print(f"\n🚀 Dashboard running at: http://localhost:5000")
-    print("="*60 + "\n")
+    logger.info("\n" + "="*60)
+    logger.info("🐷 Hammy the Hire Tracker - Go HAM on Your Job Search!")
+    logger.info("="*60)
+    logger.info(f"\n👤 User: {CONFIG.user_name}")
+    logger.info(f"📧 Email: {CONFIG.user_email}")
+    logger.info(f"📄 Resumes loaded: {len(CONFIG.resume_files)}")
+    logger.info(f"\n📁 Configuration: {APP_DIR / 'config.yaml'}")
+    logger.info(f"📁 Database: {DB_PATH}")
+    logger.info(f"📁 Gmail credentials: {CREDENTIALS_FILE}")
+    logger.info(f"\n💡 Hammy's Quick Start Guide:")
+    logger.info(f"   1. Click '📧 Scan Gmail' to import job alerts")
+    logger.info(f"   2. Click '🤖 Analyze All' for AI analysis")
+    logger.info(f"   3. Click '📬 Scan Follow-Ups' to track responses")
+    logger.info(f"   4. Use the Chrome extension for instant analysis")
+    logger.info(f"\n🚀 Dashboard running at: http://localhost:5000")
+    logger.info("="*60 + "\n")
 
     # Start Flask app
     app.run(debug=True, port=5000)
