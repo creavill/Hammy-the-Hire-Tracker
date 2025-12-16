@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, RefreshCw, FileText, ExternalLink, ChevronDown, Filter, Briefcase, CheckCircle, XCircle, Clock, Star, Plus, Mail, Phone, User, Upload, Edit2, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 
 const API_BASE = '/api';
@@ -45,12 +45,12 @@ function StatusBadge({ status, onChange, statusConfig }) {
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-10 min-w-32">
+        <div className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 min-w-32">
           {Object.entries(config_to_use).map(([key, cfg]) => (
             <button
               key={key}
               onClick={() => { onChange(key); setIsOpen(false); }}
-              className={`w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 ${key === status ? 'bg-gray-50' : ''}`}
+              className={`w-full text-left px-3 py-2 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 ${key === status ? 'bg-gray-50 dark:bg-gray-700' : ''}`}
             >
               <cfg.icon size={14} />
               {cfg.label}
@@ -67,6 +67,8 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
   const [loadingRecommendation, setLoadingRecommendation] = useState(false);
   const [notes, setNotes] = useState(job.notes || '');
   const [saveStatus, setSaveStatus] = useState(''); // 'saving' or 'saved'
+  const [jobDescription, setJobDescription] = useState(job.job_description || '');
+  const [descriptionSaveStatus, setDescriptionSaveStatus] = useState(''); // '', 'saving', 'rescoring', 'saved'
 
   // Parse resume recommendation if available
   let resumeRec = null;
@@ -98,38 +100,79 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
     setTimeout(() => setSaveStatus(''), 2000);
   };
 
+  const handleJobDescriptionChange = (e) => {
+    setJobDescription(e.target.value);
+  };
+
+  const handleJobDescriptionSave = async () => {
+    if (jobDescription === job.job_description) return; // No changes
+    if (!jobDescription.trim()) return; // Don't save empty description
+
+    setDescriptionSaveStatus('saving');
+
+    try {
+      const response = await fetch(`/api/jobs/${job.job_id}/description`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_description: jobDescription }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDescriptionSaveStatus('saved');
+
+        // Trigger parent to refresh the job data to get new score
+        if (onUpdateNotes) {
+          // Reuse the notes callback to trigger a refresh
+          await onUpdateNotes(job.job_id, notes);
+        }
+
+        setTimeout(() => setDescriptionSaveStatus(''), 2000);
+      } else {
+        setDescriptionSaveStatus('');
+        console.error('Failed to save job description');
+      }
+    } catch (err) {
+      setDescriptionSaveStatus('');
+      console.error('Job description save failed:', err);
+    }
+  };
+
   return (
-    <div className={`bg-white rounded-lg shadow-sm border overflow-hidden ${
-      isSelected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+    <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border overflow-hidden transition-colors ${
+      isSelected ? 'border-blue-500 ring-2 ring-blue-200 dark:border-blue-400 dark:ring-blue-800' : 'border-gray-200 dark:border-gray-700'
     }`}>
       <div className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
+              <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex-shrink-0">
+                Discovered
+              </span>
               <ScoreBadge score={job.score} />
-              <h3 className="font-semibold text-gray-900 truncate">{job.title}</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-white truncate">{job.title}</h3>
             </div>
-            <p className="text-gray-600 text-sm">{job.company || 'Unknown Company'}</p>
-            <p className="text-gray-500 text-xs">{job.location || 'Location not specified'}</p>
+            <p className="text-gray-600 dark:text-gray-300 text-sm">{job.company || 'Unknown Company'}</p>
+            <p className="text-gray-500 dark:text-gray-400 text-xs">{job.location || 'Location not specified'}</p>
           </div>
 
           <div className="flex items-center gap-2">
             <StatusBadge status={job.status} onChange={(s) => onStatusChange(job.job_id, s)} />
-            <span className="text-xs text-gray-400 capitalize">{job.source}</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500 capitalize">{job.source}</span>
           </div>
         </div>
 
         {analysis.recommendation && (
-          <p className="mt-2 text-sm text-gray-600 line-clamp-2">{analysis.recommendation}</p>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 line-clamp-2">{analysis.recommendation}</p>
         )}
       </div>
-      
+
       {expanded && (
-        <div className="border-t px-4 py-3 bg-gray-50 space-y-3">
+        <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-900/50 space-y-3">
           {analysis.strengths?.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-cyan-700 uppercase mb-1">Strengths</h4>
-              <ul className="text-sm text-gray-700 space-y-1">
+              <h4 className="text-xs font-semibold text-cyan-700 dark:text-cyan-400 uppercase mb-1">Strengths</h4>
+              <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                 {analysis.strengths.map((s, i) => <li key={i}>• {s}</li>)}
               </ul>
             </div>
@@ -137,28 +180,58 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
 
           {analysis.gaps?.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-red-700 uppercase mb-1">Gaps</h4>
-              <ul className="text-sm text-gray-700 space-y-1">
+              <h4 className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase mb-1">Gaps</h4>
+              <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                 {analysis.gaps.map((g, i) => <li key={i}>• {g}</li>)}
               </ul>
             </div>
           )}
-          
+
           {job.cover_letter && (
             <div>
-              <h4 className="text-xs font-semibold text-gray-700 uppercase mb-1">Cover Letter</h4>
-              <pre className="text-sm text-gray-700 whitespace-pre-wrap bg-white p-3 rounded border max-h-48 overflow-y-auto">
+              <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase mb-1">Cover Letter</h4>
+              <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto">
                 {job.cover_letter}
               </pre>
             </div>
           )}
 
+          {/* Job Description Section */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">
+                Job Description
+              </h4>
+              {descriptionSaveStatus && (
+                <span className="text-xs text-gray-500">
+                  {descriptionSaveStatus === 'saving' && '💾 Saving...'}
+                  {descriptionSaveStatus === 'rescoring' && '🤖 Rescoring...'}
+                  {descriptionSaveStatus === 'saved' && '✓ Saved & Rescored'}
+                </span>
+              )}
+            </div>
+            <textarea
+              value={jobDescription}
+              onChange={handleJobDescriptionChange}
+              onBlur={handleJobDescriptionSave}
+              placeholder="Paste the full job description here for better AI analysis..."
+              className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg
+                         text-sm bg-white dark:bg-gray-800 dark:text-gray-100
+                         focus:ring-2 focus:ring-cyan-500 focus:border-transparent
+                         min-h-[200px] resize-y"
+              rows={10}
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              💡 Adding the full job description will automatically rescore the job with better accuracy
+            </p>
+          </div>
+
           {/* Notes Section */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <h4 className="text-xs font-semibold text-gray-700 uppercase">Notes</h4>
+              <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">Notes</h4>
               {saveStatus && (
-                <span className={`text-xs ${saveStatus === 'saving' ? 'text-blue-600' : 'text-cyan-600'}`}>
+                <span className={`text-xs ${saveStatus === 'saving' ? 'text-blue-600 dark:text-blue-400' : 'text-cyan-600 dark:text-cyan-400'}`}>
                   {saveStatus === 'saving' ? 'Saving...' : '✓ Saved'}
                 </span>
               )}
@@ -168,12 +241,12 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
               onChange={handleNotesChange}
               onBlur={handleNotesSave}
               placeholder="Add notes, interview dates, key takeaways..."
-              className="w-full px-3 py-2 text-sm border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               rows="3"
             />
           </div>
 
-          <div className="flex items-center gap-2 pt-2">
+          <div className="flex flex-wrap items-center gap-2 pt-2">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -181,7 +254,7 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
               }}
               className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
             >
-              <ExternalLink size={14} /> View Job
+              <ExternalLink size={14} /> <span className="hidden sm:inline">View Job</span><span className="sm:hidden">View</span>
             </button>
 
             {!job.cover_letter && (
@@ -189,20 +262,20 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
                 onClick={(e) => { e.stopPropagation(); onGenerateCoverLetter(job.job_id); }}
                 className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded text-sm hover:bg-purple-700"
               >
-                <FileText size={14} /> Generate Cover Letter
+                <FileText size={14} /> <span className="hidden sm:inline">Generate Cover Letter</span><span className="sm:hidden">Cover</span>
               </button>
             )}
 
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(job.job_id); }}
-              className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 ml-auto"
+              className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 sm:ml-auto"
             >
               <Trash2 size={14} /> Delete
             </button>
           </div>
-          
-          <div className="text-xs text-gray-400">
-            Added: {new Date(job.created_at).toLocaleDateString()} • 
+
+          <div className="text-xs text-gray-400 dark:text-gray-500">
+            Added: {new Date(job.created_at).toLocaleDateString()} •
             Resume: {analysis.resume_to_use || 'fullstack'}
           </div>
         </div>
@@ -213,17 +286,17 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
 
 function StatsBar({ stats }) {
   return (
-    <div className="grid grid-cols-5 gap-4 mb-6">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
       {[
-        { label: 'Total', value: stats.total, color: 'bg-white border border-gray-200', textColor: 'text-gray-900' },
-        { label: 'New', value: stats.new, color: 'bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200', textColor: 'text-gray-900' },
-        { label: 'Interested', value: stats.interested, color: 'bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200', textColor: 'text-blue-900' },
-        { label: 'Applied', value: stats.applied, color: 'bg-gradient-to-br from-cyan-50 to-cyan-100 border border-cyan-200', textColor: 'text-cyan-900' },
-        { label: 'Avg Score', value: Math.round(stats.avg_score), color: 'bg-gradient-to-br from-pink-100 to-pink-200 border border-pink-300', textColor: 'text-pink-900' },
+        { label: 'Total', value: stats.total, color: 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700', textColor: 'text-gray-900 dark:text-white' },
+        { label: 'New', value: stats.new, color: 'bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 border border-gray-200 dark:border-gray-600', textColor: 'text-gray-900 dark:text-white' },
+        { label: 'Interested', value: stats.interested, color: 'bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 border border-blue-200 dark:border-blue-700', textColor: 'text-blue-900 dark:text-blue-300' },
+        { label: 'Applied', value: stats.applied, color: 'bg-gradient-to-br from-cyan-50 to-cyan-100 dark:from-cyan-900/30 dark:to-cyan-800/30 border border-cyan-200 dark:border-cyan-700', textColor: 'text-cyan-900 dark:text-cyan-300' },
+        { label: 'Avg Score', value: Math.round(stats.avg_score), color: 'bg-gradient-to-br from-pink-100 to-pink-200 dark:from-pink-900/30 dark:to-pink-800/30 border border-pink-300 dark:border-pink-700', textColor: 'text-pink-900 dark:text-pink-300' },
       ].map(({ label, value, color, textColor }) => (
-        <div key={label} className={`${color} rounded-lg p-4 text-center shadow-sm hover:shadow-md transition-shadow`}>
-          <div className={`text-3xl font-bold ${textColor}`}>{value}</div>
-          <div className="text-xs text-gray-600 font-medium mt-1">{label}</div>
+        <div key={label} className={`${color} rounded-lg p-3 sm:p-4 text-center shadow-sm hover:shadow-md transition-shadow`}>
+          <div className={`text-2xl sm:text-3xl font-bold ${textColor}`}>{value}</div>
+          <div className="text-xs text-gray-600 dark:text-gray-400 font-medium mt-1">{label}</div>
         </div>
       ))}
     </div>
@@ -241,47 +314,47 @@ function ResumeCard({ resume, onEdit, onDelete, onResearch, expanded, onToggle }
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
       <div
-        className="p-4 cursor-pointer hover:bg-gray-50"
+        className="p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 mb-1">{resume.name}</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">{resume.name}</h3>
             {resume.focus_areas && (
-              <p className="text-sm text-gray-600 mb-1">
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-1">
                 <span className="font-medium">Focus:</span> {resume.focus_areas}
               </p>
             )}
             {resume.target_roles && (
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-300">
                 <span className="font-medium">Target Roles:</span> {resume.target_roles}
               </p>
             )}
           </div>
           <div className="flex flex-col items-end gap-2">
-            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
+            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
               Used {resume.usage_count || 0}x
             </span>
             <div className="flex gap-1">
               <button
                 onClick={handleResearch}
                 disabled={researching}
-                className="p-1.5 text-purple-600 hover:bg-purple-50 rounded disabled:opacity-50"
+                className="p-1.5 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded disabled:opacity-50"
                 title="Find jobs for this resume"
               >
                 {researching ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onEdit(resume); }}
-                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
               >
                 <Edit2 size={16} />
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onDelete(resume.resume_id); }}
-                className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
               >
                 <Trash2 size={16} />
               </button>
@@ -291,12 +364,12 @@ function ResumeCard({ resume, onEdit, onDelete, onResearch, expanded, onToggle }
       </div>
 
       {expanded && (
-        <div className="border-t px-4 py-3 bg-gray-50 space-y-2">
-          <div className="text-xs text-gray-500">
+        <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-900/50 space-y-2">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
             Created: {new Date(resume.created_at).toLocaleDateString()}
           </div>
           <div className="max-h-40 overflow-y-auto">
-            <p className="text-sm text-gray-700 whitespace-pre-wrap font-mono bg-white p-2 rounded border">
+            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
               {resume.content?.substring(0, 500)}...
             </p>
           </div>
@@ -407,28 +480,28 @@ function ResumeUploadModal({ onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
-          <h2 className="text-2xl font-bold mb-4">Add New Resume</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Add New Resume</h2>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-              <AlertCircle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700">{error}</p>
+            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2">
+              <AlertCircle size={20} className="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Upload Mode Toggle */}
-            <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
+            <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-700 rounded-lg">
               <button
                 type="button"
                 onClick={() => setUploadMode('file')}
                 className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition ${
                   uploadMode === 'file'
-                    ? 'bg-white text-gray-900 shadow'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 📎 Upload File
@@ -438,8 +511,8 @@ function ResumeUploadModal({ onClose, onSave }) {
                 onClick={() => setUploadMode('paste')}
                 className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition ${
                   uploadMode === 'paste'
-                    ? 'bg-white text-gray-900 shadow'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 📝 Paste Text
@@ -448,19 +521,19 @@ function ResumeUploadModal({ onClose, onSave }) {
 
             {/* File Upload Mode */}
             {uploadMode === 'file' && (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <Upload size={40} className="mx-auto mb-3 text-gray-400" />
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center bg-gray-50 dark:bg-gray-700/50">
+                <Upload size={40} className="mx-auto mb-3 text-gray-400 dark:text-gray-500" />
                 <label className="cursor-pointer">
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-gray-600 dark:text-gray-300">
                     {selectedFile ? (
-                      <span className="text-teal-600 font-medium">
+                      <span className="text-teal-600 dark:text-teal-400 font-medium">
                         ✓ {selectedFile.name}
                       </span>
                     ) : (
                       <>
                         Click to upload or drag and drop
                         <br />
-                        <span className="text-xs text-gray-500">PDF, TXT, or MD files</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">PDF, TXT, or MD files</span>
                       </>
                     )}
                   </span>
@@ -475,7 +548,7 @@ function ResumeUploadModal({ onClose, onSave }) {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Resume Name *
               </label>
               <input
@@ -483,13 +556,13 @@ function ResumeUploadModal({ onClose, onSave }) {
                 placeholder="e.g., Backend Python AWS"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Focus Areas
               </label>
               <input
@@ -497,12 +570,12 @@ function ResumeUploadModal({ onClose, onSave }) {
                 placeholder="e.g., Python, AWS, FastAPI, PostgreSQL"
                 value={formData.focus_areas}
                 onChange={(e) => setFormData({ ...formData, focus_areas: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Target Roles
               </label>
               <input
@@ -510,21 +583,21 @@ function ResumeUploadModal({ onClose, onSave }) {
                 placeholder="e.g., Backend Engineer, API Developer"
                 value={formData.target_roles}
                 onChange={(e) => setFormData({ ...formData, target_roles: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
             </div>
 
             {/* Paste Mode */}
             {uploadMode === 'paste' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Resume Content *
                 </label>
                 <textarea
                   placeholder="Paste your resume text here..."
                   value={formData.content}
                   onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 font-mono text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   rows={12}
                   required={uploadMode === 'paste'}
                 />
@@ -535,7 +608,7 @@ function ResumeUploadModal({ onClose, onSave }) {
               <button
                 type="submit"
                 disabled={saving}
-                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition"
               >
                 {saving ? 'Saving...' : 'Save Resume'}
               </button>
@@ -543,7 +616,7 @@ function ResumeUploadModal({ onClose, onSave }) {
                 type="button"
                 onClick={onClose}
                 disabled={saving}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition"
               >
                 Cancel
               </button>
@@ -574,21 +647,21 @@ function ExternalApplicationCard({ app, onStatusChange, expanded, onToggle, onDe
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
       <div
-        className="p-4 cursor-pointer hover:bg-gray-50"
+        className="p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
-                EXTERNAL
+              <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 flex-shrink-0">
+                Manual
               </span>
-              <h3 className="font-semibold text-gray-900 truncate">{app.title}</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-white truncate">{app.title}</h3>
             </div>
-            <p className="text-gray-600 text-sm">{app.company}</p>
-            <p className="text-gray-500 text-xs">{app.location || 'Location not specified'}</p>
+            <p className="text-gray-600 dark:text-gray-300 text-sm">{app.company}</p>
+            <p className="text-gray-500 dark:text-gray-400 text-xs">{app.location || 'Location not specified'}</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -597,33 +670,33 @@ function ExternalApplicationCard({ app, onStatusChange, expanded, onToggle, onDe
               onChange={(s) => onStatusChange(app.app_id, s)}
               statusConfig={EXTERNAL_STATUS_CONFIG}
             />
-            <span className="text-xs text-gray-400">{sourceLabels[app.source] || app.source}</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">{sourceLabels[app.source] || app.source}</span>
           </div>
         </div>
       </div>
 
       {expanded && (
-        <div className="border-t px-4 py-3 bg-gray-50 space-y-3">
-          <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-900/50 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div>
-              <span className="text-gray-500">Applied:</span>
-              <span className="ml-2 font-medium">{new Date(app.applied_date).toLocaleDateString()}</span>
+              <span className="text-gray-500 dark:text-gray-400">Applied:</span>
+              <span className="ml-2 font-medium text-gray-900 dark:text-gray-100">{new Date(app.applied_date).toLocaleDateString()}</span>
             </div>
             {app.application_method && (
               <div>
-                <span className="text-gray-500">Method:</span>
-                <span className="ml-2 font-medium capitalize">{app.application_method.replace('_', ' ')}</span>
+                <span className="text-gray-500 dark:text-gray-400">Method:</span>
+                <span className="ml-2 font-medium text-gray-900 dark:text-gray-100 capitalize">{app.application_method.replace('_', ' ')}</span>
               </div>
             )}
             {app.contact_name && (
-              <div>
-                <User size={14} className="inline mr-1" />
+              <div className="text-gray-900 dark:text-gray-100">
+                <User size={14} className="inline mr-1 text-gray-500 dark:text-gray-400" />
                 <span className="font-medium">{app.contact_name}</span>
               </div>
             )}
             {app.contact_email && (
-              <div>
-                <Mail size={14} className="inline mr-1" />
+              <div className="text-gray-900 dark:text-gray-100">
+                <Mail size={14} className="inline mr-1 text-gray-500 dark:text-gray-400" />
                 <span className="font-medium">{app.contact_email}</span>
               </div>
             )}
@@ -631,12 +704,12 @@ function ExternalApplicationCard({ app, onStatusChange, expanded, onToggle, onDe
 
           {app.notes && (
             <div>
-              <h4 className="text-xs font-semibold text-gray-700 uppercase mb-1">Notes</h4>
-              <p className="text-sm text-gray-700 bg-white p-3 rounded border">{app.notes}</p>
+              <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase mb-1">Notes</h4>
+              <p className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700">{app.notes}</p>
             </div>
           )}
 
-          <div className="flex items-center gap-2 pt-2">
+          <div className="flex flex-wrap items-center gap-2 pt-2">
             {app.url && (
               <a
                 href={app.url}
@@ -655,7 +728,7 @@ function ExternalApplicationCard({ app, onStatusChange, expanded, onToggle, onDe
             </button>
           </div>
 
-          <div className="text-xs text-gray-400">
+          <div className="text-xs text-gray-400 dark:text-gray-500">
             Created: {new Date(app.created_at).toLocaleDateString()}
           </div>
         </div>
@@ -672,8 +745,8 @@ export default function App() {
   const [scoring, setScoring] = useState(false);
   const [researching, setResearching] = useState(false);
   const [expandedJob, setExpandedJob] = useState(null);
-  const [filter, setFilter] = useState({ status: '', minScore: 0, search: '', sort: 'date' });
-  const [activeView, setActiveView] = useState('discovered'); // 'discovered', 'external', 'resumes', 'companies', 'roadmap', or 'settings'
+  const [filter, setFilter] = useState({ status: '', minScore: 0, search: '', sort: 'date', app_type: 'all' });
+  const [activeView, setActiveView] = useState('all_applications'); // 'all_applications', 'resumes', 'companies', 'roadmap', or 'settings'
   const [externalApps, setExternalApps] = useState([]);
   const [showAddExternal, setShowAddExternal] = useState(false);
   const [resumes, setResumes] = useState([]);
@@ -720,8 +793,8 @@ export default function App() {
       // Ignore if typing in input/textarea
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-      // Only apply shortcuts on discovered jobs view
-      if (activeView !== 'discovered') {
+      // Only apply shortcuts on all applications view
+      if (activeView !== 'all_applications') {
         if (e.key === '?') setShowShortcutsHelp(true);
         return;
       }
@@ -916,17 +989,23 @@ export default function App() {
 
   const handleUpdateNotes = async (jobId, notes) => {
     try {
-      await fetch(`${API_BASE}/jobs/${jobId}`, {
+      const response = await fetch(`${API_BASE}/jobs/${jobId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes }),
       });
-      // Update local state optimistically
-      setJobs(prevJobs =>
-        prevJobs.map(job =>
-          job.job_id === jobId ? { ...job, notes } : job
-        )
-      );
+
+      if (response.ok) {
+        // Refresh the job list to get updated data (including new scores from description updates)
+        await fetchJobs();
+      } else {
+        // Fallback: just update notes locally
+        setJobs((prevJobs) =>
+          prevJobs.map((job) =>
+            job.job_id === jobId ? { ...job, notes } : job
+          )
+        );
+      }
     } catch (err) {
       console.error('Notes update failed:', err);
       showToast('Failed to save notes', 'error');
@@ -1203,51 +1282,88 @@ export default function App() {
           return new Date(b.created_at) - new Date(a.created_at);
       }
     });
-  
+
+  // Combine jobs and external applications for unified view
+  const allApplications = useMemo(() => {
+    const combinedList = [];
+
+    // Add discovered jobs with type marker
+    jobs.forEach(job => {
+      combinedList.push({
+        ...job,
+        app_type: 'discovered',
+        sort_date: job.email_date || job.created_at,
+        display_status: job.status
+      });
+    });
+
+    // Add external applications with type marker
+    externalApps.forEach(app => {
+      combinedList.push({
+        ...app,
+        app_type: 'external',
+        sort_date: app.applied_date || app.created_at,
+        display_status: app.status
+      });
+    });
+
+    // Sort by most recent first
+    return combinedList.sort((a, b) => {
+      const dateA = new Date(a.sort_date || 0);
+      const dateB = new Date(b.sort_date || 0);
+      return dateB - dateA;
+    });
+  }, [jobs, externalApps]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-pink-50 dark:from-gray-900 dark:to-gray-800 transition-colors duration-200">
       <header className="bg-white dark:bg-gray-800 shadow-md border-b border-pink-100 dark:border-gray-700 transition-colors duration-200">
-        <div className="max-w-6xl mx-auto px-4 py-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            {/* Logo and title - full width on mobile */}
+            <div className="flex items-center gap-3 w-full sm:w-auto">
               {/* Logo placeholder - add your logo here */}
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-400 to-pink-500 flex items-center justify-center shadow-lg">
-                <span className="text-2xl">🐷</span>
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-pink-400 to-pink-500 flex items-center justify-center shadow-lg flex-shrink-0">
+                <span className="text-xl sm:text-2xl">🐷</span>
               </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-pink-600 dark:from-pink-400 dark:to-purple-400 bg-clip-text text-transparent">
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-gray-800 to-pink-600 dark:from-pink-400 dark:to-purple-400 bg-clip-text text-transparent truncate">
                   Hammy the Hire Tracker
                 </h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400">AI-powered job matching</p>
+                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">AI-powered job matching</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Actions - wrap on mobile */}
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <button
                 onClick={handleResearchJobs}
                 disabled={researching}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm sm:text-base"
               >
-                <Sparkles size={18} className={researching ? 'animate-pulse' : ''} />
-                {researching ? 'Researching...' : 'Research Jobs with Claude'}
+                <Sparkles size={16} className={researching ? 'animate-pulse' : ''} />
+                <span className="hidden lg:inline">{researching ? 'Researching...' : 'Research Jobs'}</span>
+                <span className="lg:hidden">{researching ? 'Research...' : 'Research'}</span>
               </button>
 
               <button
                 onClick={handleScan}
                 disabled={scanning}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm sm:text-base"
               >
-                <RefreshCw size={18} className={scanning ? 'animate-spin' : ''} />
-                {scanning ? 'Scanning...' : 'Scan Emails'}
+                <RefreshCw size={16} className={scanning ? 'animate-spin' : ''} />
+                <span className="hidden md:inline">{scanning ? 'Scanning...' : 'Scan Emails'}</span>
+                <span className="md:hidden">Scan</span>
               </button>
 
               <button
                 onClick={handleScoreJobs}
                 disabled={scoring}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-300 to-pink-400 text-pink-900 rounded-lg hover:from-pink-400 hover:to-pink-500 shadow-md hover:shadow-lg transition-all disabled:opacity-50 border-2 border-pink-400"
+                className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-pink-300 to-pink-400 text-pink-900 rounded-lg hover:from-pink-400 hover:to-pink-500 shadow-md hover:shadow-lg transition-all disabled:opacity-50 border-2 border-pink-400 text-sm sm:text-base"
               >
-                <Star size={18} className={scoring ? 'animate-spin' : ''} />
-                {scoring ? 'Scoring...' : 'Score Jobs'}
+                <Star size={16} className={scoring ? 'animate-spin' : ''} />
+                <span className="hidden md:inline">{scoring ? 'Scoring...' : 'Score Jobs'}</span>
+                <span className="md:hidden">Score</span>
               </button>
             </div>
           </div>
@@ -1256,210 +1372,203 @@ export default function App() {
       
       <main className="max-w-6xl mx-auto px-4 py-6">
         {/* View Tabs */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex flex-wrap gap-2 mb-6">
           <button
-            onClick={() => setActiveView('discovered')}
-            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
-              activeView === 'discovered'
+            onClick={() => setActiveView('all_applications')}
+            className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition shadow-sm text-sm sm:text-base ${
+              activeView === 'all_applications'
                 ? 'bg-gradient-to-r from-pink-300 to-pink-400 text-pink-900 shadow-md border-2 border-pink-400'
-                : 'bg-white text-gray-700 hover:bg-pink-50 border-2 border-pink-100'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-pink-50 dark:hover:bg-gray-700 border-2 border-pink-100 dark:border-gray-600'
             }`}
           >
-            Discovered Jobs ({jobs.length})
-          </button>
-          <button
-            onClick={() => setActiveView('external')}
-            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
-              activeView === 'external'
-                ? 'bg-gradient-to-r from-emerald-200 to-emerald-300 text-emerald-900 shadow-md border-2 border-emerald-400'
-                : 'bg-white text-gray-700 hover:bg-emerald-50 border-2 border-emerald-100'
-            }`}
-          >
-            External Applications ({externalApps.length})
+            <Briefcase size={18} className="inline mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">All Applications ({allApplications.length})</span>
+            <span className="sm:hidden">All ({allApplications.length})</span>
           </button>
           <button
             onClick={() => setActiveView('resumes')}
-            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
+            className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition shadow-sm text-sm sm:text-base ${
               activeView === 'resumes'
                 ? 'bg-gradient-to-r from-purple-200 to-purple-300 text-purple-900 shadow-md border-2 border-purple-400'
-                : 'bg-white text-gray-700 hover:bg-purple-50 border-2 border-purple-100'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-purple-50 dark:hover:bg-gray-700 border-2 border-purple-100 dark:border-gray-600'
             }`}
           >
-            📄 Resume Library ({resumes.length})
+            <span className="hidden sm:inline">📄 Resume Library ({resumes.length})</span>
+            <span className="sm:hidden">📄 ({resumes.length})</span>
           </button>
           <button
             onClick={() => setActiveView('companies')}
-            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
+            className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition shadow-sm text-sm sm:text-base ${
               activeView === 'companies'
                 ? 'bg-gradient-to-r from-amber-200 to-amber-300 text-amber-900 shadow-md border-2 border-amber-400'
-                : 'bg-white text-gray-700 hover:bg-amber-50 border-2 border-amber-100'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-amber-50 dark:hover:bg-gray-700 border-2 border-amber-100 dark:border-gray-600'
             }`}
           >
-            🏢 Tracked Companies ({trackedCompanies.length})
+            <span className="hidden sm:inline">🏢 Tracked Companies ({trackedCompanies.length})</span>
+            <span className="sm:hidden">🏢 ({trackedCompanies.length})</span>
           </button>
           <button
             onClick={() => setActiveView('roadmap')}
-            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
+            className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition shadow-sm text-sm sm:text-base ${
               activeView === 'roadmap'
                 ? 'bg-gradient-to-r from-blue-200 to-blue-300 text-blue-900 shadow-md border-2 border-blue-400'
-                : 'bg-white text-gray-700 hover:bg-blue-50 border-2 border-blue-100'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-gray-700 border-2 border-blue-100 dark:border-gray-600'
             }`}
           >
-            🗺️ Roadmap
+            🗺️ <span className="hidden sm:inline">Roadmap</span>
           </button>
           <button
             onClick={() => setActiveView('settings')}
-            className={`px-4 py-2 rounded-lg font-medium transition shadow-sm ${
+            className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition shadow-sm text-sm sm:text-base ${
               activeView === 'settings'
                 ? 'bg-gradient-to-r from-gray-200 to-gray-300 text-gray-900 shadow-md border-2 border-gray-400'
-                : 'bg-white text-gray-700 hover:bg-gray-50 border-2 border-gray-100'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border-2 border-gray-100 dark:border-gray-600'
             }`}
           >
-            ⚙️ Settings
+            ⚙️ <span className="hidden sm:inline">Settings</span>
           </button>
         </div>
 
-        {activeView === 'discovered' ? (
+        {activeView === 'all_applications' ? (
           <>
             <StatsBar stats={stats} />
 
             {/* Filters */}
-            <div className="flex items-center gap-4 mb-6">
-          <div className="relative flex-1 max-w-md">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search jobs..."
-              value={filter.search}
-              onChange={(e) => setFilter({ ...filter, search: e.target.value })}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg"
-            />
-          </div>
-          
-          <select
-            value={filter.status}
-            onChange={(e) => setFilter({ ...filter, status: e.target.value })}
-            className="px-3 py-2 border rounded-lg"
-          >
-            <option value="">All Statuses</option>
-            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-              <option key={key} value={key}>{cfg.label}</option>
-            ))}
-          </select>
-          
-          <select
-            value={filter.minScore}
-            onChange={(e) => setFilter({ ...filter, minScore: Number(e.target.value) })}
-            className="px-3 py-2 border rounded-lg"
-          >
-            <option value="0">All Scores</option>
-            <option value="80">80+ (Highly Qualified)</option>
-            <option value="60">60+ (Good Match)</option>
-            <option value="40">40+ (Partial Match)</option>
-          </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+              {/* App Type Filter */}
+              <select
+                value={filter.app_type}
+                onChange={(e) => setFilter({ ...filter, app_type: e.target.value })}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              >
+                <option value="all">All Types</option>
+                <option value="discovered">Discovered Jobs</option>
+                <option value="external">External Apps</option>
+              </select>
 
-          <select
-            value={filter.sort}
-            onChange={(e) => setFilter({ ...filter, sort: e.target.value })}
-            className="px-3 py-2 border rounded-lg"
-          >
-            <option value="date">Sort by Date (Newest)</option>
-            <option value="date-oldest">Sort by Date (Oldest)</option>
-            <option value="title">Sort by Title (A-Z)</option>
-            <option value="title-desc">Sort by Title (Z-A)</option>
-            <option value="score">Sort by Score (High-Low)</option>
-            <option value="score-low">Sort by Score (Low-High)</option>
-          </select>
-        </div>
-        
-            {/* Jobs List */}
+              <div className="relative sm:col-span-2 lg:col-span-1">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                <input
+                  type="text"
+                  placeholder="Search applications..."
+                  value={filter.search}
+                  onChange={(e) => setFilter({ ...filter, search: e.target.value })}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                />
+              </div>
+
+              <select
+                value={filter.status}
+                onChange={(e) => setFilter({ ...filter, status: e.target.value })}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              >
+                <option value="">All Statuses</option>
+                {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                  <option key={key} value={key}>{cfg.label}</option>
+                ))}
+              </select>
+
+              <select
+                value={filter.minScore}
+                onChange={(e) => setFilter({ ...filter, minScore: Number(e.target.value) })}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              >
+                <option value="0">All Scores</option>
+                <option value="80">80+ (Highly Qualified)</option>
+                <option value="60">60+ (Good Match)</option>
+                <option value="40">40+ (Partial Match)</option>
+              </select>
+
+              <select
+                value={filter.sort}
+                onChange={(e) => setFilter({ ...filter, sort: e.target.value })}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              >
+                <option value="date">Date (Newest)</option>
+                <option value="date-oldest">Date (Oldest)</option>
+                <option value="title">Title (A-Z)</option>
+                <option value="title-desc">Title (Z-A)</option>
+                <option value="score">Score (High-Low)</option>
+                <option value="score-low">Score (Low-High)</option>
+              </select>
+            </div>
+
+            {/* Unified Applications List */}
             {loading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map(i => (
-                  <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 animate-pulse">
+                  <div key={i} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
                     <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
+                      <div className="w-12 h-12 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
                       <div className="flex-1 space-y-2">
-                        <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-1/3"></div>
+                        <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+                        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+                        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
                       </div>
-                      <div className="w-20 h-8 bg-gray-200 rounded"></div>
+                      <div className="w-20 h-8 bg-gray-200 dark:bg-gray-700 rounded"></div>
                     </div>
                   </div>
                 ))}
               </div>
-            ) : filteredJobs.length === 0 ? (
+            ) : allApplications.length === 0 ? (
               <div className="text-center py-12">
-                <Briefcase size={48} className="mx-auto mb-4 text-gray-300" />
-                <p className="text-gray-500">No jobs found. Click "Scan Emails" to fetch job alerts.</p>
+                <Briefcase size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+                <p className="text-gray-500 dark:text-gray-400">No applications found. Click "Scan Emails" to fetch job alerts or use the browser extension to add applications.</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredJobs.map((job, index) => (
-                  <JobCard
-                    key={job.job_id}
-                    job={job}
-                    expanded={true}
-                    onToggle={() => {}}
-                    onStatusChange={handleStatusChange}
-                    onGenerateCoverLetter={handleGenerateCoverLetter}
-                    onRecommendResume={handleRecommendResume}
-                    onDelete={handleDeleteJob}
-                    onUpdateNotes={handleUpdateNotes}
-                    isSelected={index === selectedJobIndex}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        ) : activeView === 'external' ? (
-          <>
-            {/* External Applications View */}
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">External Applications</h2>
-              <button
-                onClick={() => setShowAddExternal(!showAddExternal)}
-                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
-              >
-                <Plus size={18} />
-                {showAddExternal ? 'Cancel' : 'Add External Application'}
-              </button>
-            </div>
+                {allApplications
+                  .filter(app => {
+                    // Apply app_type filter
+                    if (filter.app_type && filter.app_type !== 'all' && app.app_type !== filter.app_type) return false;
 
-            {showAddExternal && (
-              <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
-                <h3 className="font-semibold mb-4">Add External Application</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Use the browser extension for quick capture, or visit the extension for more options.
-                </p>
-                <button
-                  onClick={() => setShowAddExternal(false)}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-                >
-                  Close
-                </button>
-              </div>
-            )}
+                    // Apply status filter
+                    if (filter.status && app.display_status !== filter.status) return false;
 
-            {externalApps.length === 0 ? (
-              <div className="text-center py-12">
-                <Briefcase size={48} className="mx-auto mb-4 text-gray-300" />
-                <p className="text-gray-500 mb-4">No external applications tracked yet.</p>
-                <p className="text-sm text-gray-400">Use the browser extension to add applications you made outside the system.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {externalApps.map(app => (
-                  <ExternalApplicationCard
-                    key={app.app_id}
-                    app={app}
-                    expanded={expandedJob === app.app_id}
-                    onToggle={() => setExpandedJob(expandedJob === app.app_id ? null : app.app_id)}
-                    onStatusChange={handleExternalStatusChange}
-                    onDelete={handleDeleteExternal}
-                  />
-                ))}
+                    // Apply score filter (only for discovered jobs)
+                    if (app.app_type === 'discovered' && app.score < filter.minScore) return false;
+
+                    // Apply search filter
+                    if (filter.search) {
+                      const search = filter.search.toLowerCase();
+                      const matches =
+                        app.title?.toLowerCase().includes(search) ||
+                        app.company?.toLowerCase().includes(search);
+                      if (!matches) return false;
+                    }
+
+                    return true;
+                  })
+                  .map((app, index) => {
+                    // Render appropriate card based on type
+                    if (app.app_type === 'discovered') {
+                      return (
+                        <JobCard
+                          key={app.job_id}
+                          job={app}
+                          expanded={true}
+                          onToggle={() => {}}
+                          onStatusChange={handleStatusChange}
+                          onGenerateCoverLetter={handleGenerateCoverLetter}
+                          onRecommendResume={handleRecommendResume}
+                          onDelete={handleDeleteJob}
+                          onUpdateNotes={handleUpdateNotes}
+                          isSelected={index === selectedJobIndex}
+                        />
+                      );
+                    } else {
+                      return (
+                        <ExternalApplicationCard
+                          key={app.app_id}
+                          app={app}
+                          expanded={expandedJob === app.app_id}
+                          onToggle={() => setExpandedJob(expandedJob === app.app_id ? null : app.app_id)}
+                          onStatusChange={handleExternalStatusChange}
+                          onDelete={handleDeleteExternal}
+                        />
+                      );
+                    }
+                  })}
               </div>
             )}
           </>
@@ -1467,7 +1576,7 @@ export default function App() {
           <>
             {/* Resumes View */}
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Resume Library</h2>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Resume Library</h2>
               <button
                 onClick={() => setShowResumeModal(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
@@ -1479,9 +1588,9 @@ export default function App() {
 
             {resumes.length === 0 ? (
               <div className="text-center py-12">
-                <FileText size={48} className="mx-auto mb-4 text-gray-300" />
-                <p className="text-gray-500 mb-4">No resumes in your library yet.</p>
-                <p className="text-sm text-gray-400 mb-6">Add your first resume to get AI-powered job-resume matching!</p>
+                <FileText size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+                <p className="text-gray-500 dark:text-gray-400 mb-4">No resumes in your library yet.</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">Add your first resume to get AI-powered job-resume matching!</p>
                 <button
                   onClick={() => setShowResumeModal(true)}
                   className="inline-flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
@@ -1534,7 +1643,7 @@ export default function App() {
           <>
             {/* Tracked Companies View */}
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Tracked Companies</h2>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Tracked Companies</h2>
               <button
                 onClick={() => setShowAddCompany(!showAddCompany)}
                 className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
@@ -1545,8 +1654,8 @@ export default function App() {
             </div>
 
             {showAddCompany && (
-              <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-                <h3 className="font-semibold mb-4">Add Tracked Company</h3>
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Add Tracked Company</h3>
                 <form onSubmit={(e) => {
                   e.preventDefault();
                   const formData = new FormData(e.target);
@@ -1560,47 +1669,47 @@ export default function App() {
                 }}>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Company Name <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
                         name="company_name"
                         required
-                        className="w-full px-3 py-2 border rounded-lg"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                         placeholder="e.g., Google, Microsoft, Startup Inc."
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Career Page URL
                       </label>
                       <input
                         type="url"
                         name="career_page_url"
-                        className="w-full px-3 py-2 border rounded-lg"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                         placeholder="https://company.com/careers"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Job Alert Email
                       </label>
                       <input
                         type="email"
                         name="job_alert_email"
-                        className="w-full px-3 py-2 border rounded-lg"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                         placeholder="jobs@company.com"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Notes
                       </label>
                       <textarea
                         name="notes"
                         rows="3"
-                        className="w-full px-3 py-2 border rounded-lg"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                         placeholder="Add any notes about this company..."
                       />
                     </div>
@@ -1614,7 +1723,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setShowAddCompany(false)}
-                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                        className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
                       >
                         Cancel
                       </button>
@@ -1626,9 +1735,9 @@ export default function App() {
 
             {trackedCompanies.length === 0 ? (
               <div className="text-center py-12">
-                <Briefcase size={48} className="mx-auto mb-4 text-gray-300" />
-                <p className="text-gray-500 mb-4">No tracked companies yet.</p>
-                <p className="text-sm text-gray-400 mb-6">
+                <Briefcase size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+                <p className="text-gray-500 dark:text-gray-400 mb-4">No tracked companies yet.</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
                   Track companies you're interested in with their career pages and job alert emails.
                 </p>
                 <button
@@ -1642,7 +1751,7 @@ export default function App() {
             ) : (
               <div className="space-y-3">
                 {trackedCompanies.map(company => (
-                  <div key={company.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                  <div key={company.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
                     {editingCompany === company.id ? (
                       <form onSubmit={(e) => {
                         e.preventDefault();
@@ -1660,28 +1769,28 @@ export default function App() {
                             name="company_name"
                             defaultValue={company.company_name}
                             required
-                            className="w-full px-3 py-2 border rounded-lg font-semibold"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-semibold focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             placeholder="Company Name"
                           />
                           <input
                             type="url"
                             name="career_page_url"
                             defaultValue={company.career_page_url || ''}
-                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             placeholder="Career Page URL"
                           />
                           <input
                             type="email"
                             name="job_alert_email"
                             defaultValue={company.job_alert_email || ''}
-                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             placeholder="Job Alert Email"
                           />
                           <textarea
                             name="notes"
                             defaultValue={company.notes || ''}
                             rows="2"
-                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                             placeholder="Notes"
                           />
                           <div className="flex gap-2">
@@ -1694,7 +1803,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => setEditingCompany(null)}
-                              className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200"
+                              className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
                             >
                               Cancel
                             </button>
@@ -1705,8 +1814,8 @@ export default function App() {
                       <>
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 text-lg mb-2">{company.company_name}</h3>
-                            <div className="space-y-1 text-sm text-gray-600">
+                            <h3 className="font-semibold text-gray-900 dark:text-white text-lg mb-2">{company.company_name}</h3>
+                            <div className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
                               {company.career_page_url && (
                                 <div className="flex items-center gap-2">
                                   <ExternalLink size={14} />
@@ -1714,7 +1823,7 @@ export default function App() {
                                     href={company.career_page_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-blue-600 hover:underline"
+                                    className="text-blue-600 dark:text-blue-400 hover:underline"
                                   >
                                     {company.career_page_url}
                                   </a>
@@ -1725,7 +1834,7 @@ export default function App() {
                                   <Mail size={14} />
                                   <a
                                     href={`mailto:${company.job_alert_email}`}
-                                    className="text-blue-600 hover:underline"
+                                    className="text-blue-600 dark:text-blue-400 hover:underline"
                                   >
                                     {company.job_alert_email}
                                   </a>
@@ -1736,7 +1845,7 @@ export default function App() {
                           <div className="flex gap-2">
                             <button
                               onClick={() => setEditingCompany(company.id)}
-                              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                              className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
                               title="Edit"
                             >
                               <Edit2 size={16} />
@@ -1747,7 +1856,7 @@ export default function App() {
                                   handleDeleteTrackedCompany(company.id);
                                 }
                               }}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                              className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
                               title="Delete"
                             >
                               <Trash2 size={16} />
@@ -1755,11 +1864,11 @@ export default function App() {
                           </div>
                         </div>
                         {company.notes && (
-                          <div className="mt-2 p-3 bg-gray-50 rounded-lg">
-                            <p className="text-sm text-gray-700">{company.notes}</p>
+                          <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
+                            <p className="text-sm text-gray-700 dark:text-gray-300">{company.notes}</p>
                           </div>
                         )}
-                        <div className="mt-3 pt-3 border-t text-xs text-gray-500">
+                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
                           Added: {new Date(company.created_at).toLocaleDateString()}
                         </div>
                       </>
@@ -1796,51 +1905,51 @@ export default function App() {
             {/* Roadmap Sections */}
             <div className="space-y-6">
               {/* Critical - Must Have */}
-              <div className="bg-white rounded-lg shadow-sm border border-red-200 overflow-hidden">
-                <div className="bg-gradient-to-r from-red-50 to-red-100 px-4 py-3 border-b border-red-200">
-                  <h3 className="font-bold text-red-900 flex items-center gap-2">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-red-200 dark:border-red-800 overflow-hidden">
+                <div className="bg-gradient-to-r from-red-50 to-red-100 dark:from-red-900/30 dark:to-red-800/30 px-4 py-3 border-b border-red-200 dark:border-red-800">
+                  <h3 className="font-bold text-red-900 dark:text-red-300 flex items-center gap-2">
                     🚨 CRITICAL - Must Have Before Test Users
-                    <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded-full">P0</span>
+                    <span className="text-xs bg-red-200 dark:bg-red-900/50 text-red-800 dark:text-red-200 px-2 py-1 rounded-full">P0</span>
                   </h3>
                 </div>
                 <div className="p-4 space-y-2 text-sm">
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">Authentication & Multi-User Support</div>
-                      <div className="text-xs text-gray-600">User registration, login, session management, user isolation</div>
-                      <div className="text-xs text-gray-500 mt-1">Effort: 2-3 weeks</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Authentication & Multi-User Support</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">User registration, login, session management, user isolation</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">Effort: 2-3 weeks</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">Database & Hosting</div>
-                      <div className="text-xs text-gray-600">Migrate to PostgreSQL, deploy backend/frontend, environment management</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Database & Hosting</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">Migrate to PostgreSQL, deploy backend/frontend, environment management</div>
                       <div className="text-xs text-gray-500 mt-1">Effort: 1 week</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">API Key Management</div>
-                      <div className="text-xs text-gray-600">Secure storage, rate limiting, cost tracking, BYOK decision</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">API Key Management</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">Secure storage, rate limiting, cost tracking, BYOK decision</div>
                       <div className="text-xs text-gray-500 mt-1">Effort: 3-5 days</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">Gmail OAuth Per User</div>
-                      <div className="text-xs text-gray-600">OAuth flow, token storage, refresh handling per user</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Gmail OAuth Per User</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">OAuth flow, token storage, refresh handling per user</div>
                       <div className="text-xs text-gray-500 mt-1">Effort: 2-3 days</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">Domain & SSL</div>
-                      <div className="text-xs text-gray-600">Purchase domain, SSL certificate, configure DNS, update OAuth redirects</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Domain & SSL</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">Purchase domain, SSL certificate, configure DNS, update OAuth redirects</div>
                       <div className="text-xs text-gray-500 mt-1">Effort: 4 hours</div>
                     </div>
                   </div>
@@ -1848,66 +1957,66 @@ export default function App() {
               </div>
 
               {/* Quick Wins - In Progress */}
-              <div className="bg-white rounded-lg shadow-sm border border-blue-200 overflow-hidden">
-                <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-4 py-3 border-b border-blue-200">
-                  <h3 className="font-bold text-blue-900 flex items-center gap-2">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-blue-200 dark:border-blue-800 overflow-hidden">
+                <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 px-4 py-3 border-b border-blue-200 dark:border-blue-800">
+                  <h3 className="font-bold text-blue-900 dark:text-blue-300 flex items-center gap-2">
                     🎯 Quick Wins - Easy but Impactful
-                    <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded-full">In Progress</span>
+                    <span className="text-xs bg-blue-200 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full">In Progress</span>
                   </h3>
                 </div>
                 <div className="p-4 space-y-2 text-sm">
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" defaultChecked />
                     <div className="opacity-60">
-                      <div className="font-medium text-gray-900 line-through">Create Roadmap Page</div>
-                      <div className="text-xs text-teal-600">✓ Completed</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100 line-through">Create Roadmap Page</div>
+                      <div className="text-xs text-teal-600 dark:text-teal-400">✓ Completed</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">Custom Email Sources (User-Defined) ⚡</div>
-                      <div className="text-xs text-gray-600">UI to add custom job board email patterns with AI assistance</div>
-                      <div className="text-xs text-blue-600 mt-1">🔄 Starting Now - Effort: 2-3 days</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Custom Email Sources (User-Defined) ⚡</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">UI to add custom job board email patterns with AI assistance</div>
+                      <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">🔄 Starting Now - Effort: 2-3 days</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">Dark Mode</div>
-                      <div className="text-xs text-gray-600">Toggle in settings, respect system preference</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Dark Mode</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">Toggle in settings, respect system preference</div>
                       <div className="text-xs text-gray-500 mt-1">Effort: 1 day</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">Keyboard Shortcuts</div>
-                      <div className="text-xs text-gray-600">J/K navigation, / search, Enter open, D delete, ? help</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Keyboard Shortcuts</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">J/K navigation, / search, Enter open, D delete, ? help</div>
                       <div className="text-xs text-gray-500 mt-1">Effort: 4 hours</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">Job Notes</div>
-                      <div className="text-xs text-gray-600">Quick notes field, interview date, key takeaways</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Job Notes</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">Quick notes field, interview date, key takeaways</div>
                       <div className="text-xs text-gray-500 mt-1">Effort: 2 hours</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">Better Empty States & Loading</div>
-                      <div className="text-xs text-gray-600">Skeleton loaders, progress bars, toast notifications</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Better Empty States & Loading</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">Skeleton loaders, progress bars, toast notifications</div>
                       <div className="text-xs text-gray-500 mt-1">Effort: 1 day</div>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
                     <input type="checkbox" className="mt-1" />
                     <div>
-                      <div className="font-medium text-gray-900">Enhanced Deduplication</div>
-                      <div className="text-xs text-gray-600">Fuzzy matching, show similar jobs, manual merge</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Enhanced Deduplication</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">Fuzzy matching, show similar jobs, manual merge</div>
                       <div className="text-xs text-gray-500 mt-1">Effort: 2 days</div>
                     </div>
                   </div>
@@ -2085,17 +2194,17 @@ export default function App() {
             </div>
 
             {/* Custom Email Sources Section */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-6">
-              <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-4 py-3 border-b border-blue-200">
-                <h3 className="font-bold text-blue-900">📧 Custom Email Sources</h3>
-                <p className="text-sm text-blue-700 mt-1">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+              <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 px-4 py-3 border-b border-blue-200 dark:border-blue-700">
+                <h3 className="font-bold text-blue-900 dark:text-blue-300">📧 Custom Email Sources</h3>
+                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
                   Add job boards and companies that send you job alerts via email
                 </p>
               </div>
 
               <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
                     {customEmailSources.length} custom source{customEmailSources.length !== 1 ? 's' : ''} configured
                   </p>
                   <button
@@ -2109,8 +2218,8 @@ export default function App() {
 
                 {/* Add Email Source Form */}
                 {showAddEmailSource && (
-                  <div className="bg-blue-50 rounded-lg border border-blue-200 p-4 mb-4">
-                    <h4 className="font-semibold text-blue-900 mb-3">Add New Email Source</h4>
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4 mb-4">
+                    <h4 className="font-semibold text-blue-900 dark:text-blue-300 mb-3">Add New Email Source</h4>
                     <form onSubmit={(e) => {
                       e.preventDefault();
                       const formData = new FormData(e.target);
@@ -2124,59 +2233,59 @@ export default function App() {
                     }}>
                       <div className="space-y-3">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Source Name <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="text"
                             name="name"
                             required
-                            className="w-full px-3 py-2 border rounded-lg"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="e.g., Stripe Careers, Remote.com Jobs"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Sender Email
                           </label>
                           <input
                             type="email"
                             name="sender_email"
-                            className="w-full px-3 py-2 border rounded-lg"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="e.g., careers@stripe.com, jobs@remote.com"
                           />
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                             The exact email address that sends job alerts
                           </p>
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Sender Pattern (Alternative)
                           </label>
                           <input
                             type="text"
                             name="sender_pattern"
-                            className="w-full px-3 py-2 border rounded-lg"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="e.g., noreply@company.com"
                           />
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                             Use if emails come from varying senders (one or the other required)
                           </p>
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Subject Keywords (Optional)
                           </label>
                           <input
                             type="text"
                             name="subject_keywords"
-                            className="w-full px-3 py-2 border rounded-lg"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="e.g., job alert, new opportunities, careers"
                           />
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                             Comma-separated keywords to match in subject line
                           </p>
                         </div>
@@ -2191,7 +2300,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => setShowAddEmailSource(false)}
-                            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                            className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
                           >
                             Cancel
                           </button>
@@ -2203,47 +2312,47 @@ export default function App() {
 
                 {/* Email Sources List */}
                 {customEmailSources.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <Mail size={48} className="mx-auto mb-3 text-gray-300" />
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    <Mail size={48} className="mx-auto mb-3 text-gray-300 dark:text-gray-600" />
                     <p className="mb-2">No custom email sources yet</p>
-                    <p className="text-sm text-gray-400">
+                    <p className="text-sm text-gray-400 dark:text-gray-500">
                       Add email sources to scan job alerts from any company or job board
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {customEmailSources.map(source => (
-                      <div key={source.id} className="border rounded-lg p-3 flex items-start justify-between hover:bg-gray-50">
+                      <div key={source.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 flex items-start justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <h4 className="font-semibold text-gray-900">{source.name}</h4>
+                            <h4 className="font-semibold text-gray-900 dark:text-white">{source.name}</h4>
                             <span className={`text-xs px-2 py-0.5 rounded-full ${
                               source.enabled
-                                ? 'bg-teal-100 text-teal-700'
-                                : 'bg-gray-100 text-gray-600'
+                                ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                             }`}>
                               {source.enabled ? 'Active' : 'Disabled'}
                             </span>
                           </div>
                           {source.sender_email && (
-                            <p className="text-sm text-gray-600 mt-1">
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
                               <Mail size={14} className="inline mr-1" />
                               From: {source.sender_email}
                             </p>
                           )}
                           {source.sender_pattern && !source.sender_email && (
-                            <p className="text-sm text-gray-600 mt-1">
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
                               <Mail size={14} className="inline mr-1" />
                               Pattern: {source.sender_pattern}
                             </p>
                           )}
                           {source.subject_keywords && (
-                            <p className="text-sm text-gray-600 mt-1">
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
                               <Filter size={14} className="inline mr-1" />
                               Keywords: {source.subject_keywords}
                             </p>
                           )}
-                          <p className="text-xs text-gray-400 mt-1">
+                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                             Added: {new Date(source.created_at).toLocaleDateString()}
                           </p>
                         </div>
@@ -2253,8 +2362,8 @@ export default function App() {
                             onClick={() => handleToggleEmailSource(source)}
                             className={`px-3 py-1 text-sm rounded ${
                               source.enabled
-                                ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                : 'bg-teal-100 text-teal-700 hover:bg-teal-200'
+                                ? 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                : 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 hover:bg-teal-200 dark:hover:bg-teal-900/50'
                             }`}
                             title={source.enabled ? 'Disable' : 'Enable'}
                           >
@@ -2266,7 +2375,7 @@ export default function App() {
                                 handleDeleteEmailSource(source.id);
                               }
                             }}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded"
+                            className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                             title="Delete"
                           >
                             <Trash2 size={16} />
@@ -2278,15 +2387,15 @@ export default function App() {
                 )}
 
                 {/* Help Text */}
-                <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <h4 className="font-semibold text-blue-900 mb-2">💡 How to Use Custom Email Sources</h4>
-                  <ul className="text-sm text-blue-800 space-y-1">
+                <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <h4 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">💡 How to Use Custom Email Sources</h4>
+                  <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
                     <li>1. Find a job alert email in your inbox from the source you want to add</li>
                     <li>2. Copy the sender's email address (e.g., jobs@company.com)</li>
                     <li>3. Add it here with a memorable name</li>
                     <li>4. Run "Scan Emails" to start finding jobs from this source</li>
                   </ul>
-                  <p className="text-sm text-blue-700 mt-3">
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-3">
                     <strong>Tip:</strong> Subject keywords are optional but help filter out non-job emails from the same sender.
                   </p>
                 </div>
@@ -2294,8 +2403,8 @@ export default function App() {
             </div>
 
             {/* Future Settings Sections */}
-            <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-6 border border-gray-200 text-center">
-              <p className="text-gray-600">
+            <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-lg p-6 border border-gray-200 dark:border-gray-700 text-center">
+              <p className="text-gray-600 dark:text-gray-400">
                 More settings coming soon: notifications, preferences, API keys, and more!
               </p>
             </div>
@@ -2375,7 +2484,7 @@ export default function App() {
               </div>
 
               <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                Shortcuts work on the Discovered Jobs view
+                Shortcuts work on the All Applications view
               </p>
             </div>
           </div>

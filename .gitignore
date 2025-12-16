@@ -61,3 +61,14 @@ cover_letters/
 # Personal resumes (keep templates)
 resumes/*.txt
 !resumes/templates/*.txt
+
+# Personal data files
+cover_letter_template.txt
+*.txt
+!resumes/templates/*.txt
+!README*.txt
+!requirements*.txt
+!LICENSE.txt
+
+# Old build artifacts and backups
+mnt/

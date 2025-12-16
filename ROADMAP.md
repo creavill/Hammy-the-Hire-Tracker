@@ -1,753 +1,614 @@
-# Hammy the Hire Helper - Product Roadmap
+# Hammy the Hire Tracker - Open Source Roadmap
 
 **Last Updated:** December 2024
-**Current Status:** Local Prototype → Preparing for Multi-User Beta
+**Current Status:** Open Source Project - Self-Hosted Job Tracker
+**License:** MIT (or your choice)
 
 ---
 
 ## 🎯 Vision
-Transform Hammy from a powerful local job tracking tool into a SaaS product that helps job seekers manage their entire job search workflow from email alerts to offer acceptance.
+
+Hammy is an **open-source, privacy-first job tracking tool** that helps job seekers manage their entire job search workflow from email alerts to offer acceptance. Users self-host Hammy to maintain complete control over their data while benefiting from AI-powered job matching and analysis.
+
+**Core Principles:**
+- **Privacy First:** All data stays on the user's machine or their chosen infrastructure
+- **Self-Hosted:** No central service, no data collection
+- **AI-Powered:** Leverage Claude AI for intelligent job matching
+- **Extensible:** Plugin architecture for community contributions
+- **Open Source:** MIT licensed, community-driven development
 
 ---
 
-## 🚨 CRITICAL - Must Have Before Test Users
+## 🚀 Phase 1: Core Open Source Features ✅
 
-### 1. Authentication & Multi-User Support ⏳
-**Status:** Not Started
-**Priority:** P0
-**Estimated Effort:** 2-3 weeks
+**Goal:** Establish Hammy as a production-ready, well-documented open-source tool
 
-**Current State:** Anyone with localhost access can see all data
+### ✅ Completed Features
 
-**Required Changes:**
-- [ ] User registration/login system
-- [ ] Email verification
-- [ ] Password reset flow
-- [ ] Session management
-- [ ] User isolation (each user sees only their jobs)
-- [ ] Database migration to add `user_id` to all tables
-- [ ] Update all queries to filter by `user_id`
+- [x] Email scanning (LinkedIn, Indeed, Greenhouse, Wellfound)
+- [x] AI-powered job scoring and analysis (Claude integration)
+- [x] Multi-resume support with recommendations
+- [x] Cover letter generation
+- [x] Job description paste & auto-rescore
+- [x] External application tracking
+- [x] Follow-up email detection
+- [x] Chrome extension for instant analysis
+- [x] Dark mode support
+- [x] Mobile-responsive UI
+- [x] Comprehensive logging
+- [x] Database backups
+- [x] Docker deployment support
+- [x] Full test suite (pytest)
+- [x] Complete documentation
 
-**Technical Approach:**
-- Use Supabase Auth for authentication
-- Add `user_id` foreign key to: `jobs`, `resumes`, `external_applications`, `tracked_companies`, `email_sources`
-- Add Row Level Security (RLS) policies in Supabase
+### ⏳ In Progress
 
----
-
-### 2. Database & Hosting ⏳
-**Status:** Not Started
-**Priority:** P0
-**Estimated Effort:** 1 week
-
-**Current State:** SQLite file on local machine
-
-**Required Changes:**
-- [ ] Migrate to PostgreSQL (Supabase recommended)
-- [ ] Set up hosted backend (Railway/Render)
-- [ ] Deploy frontend (Vercel/Netlify)
-- [ ] Environment variable management
-- [ ] Database backup strategy
-- [ ] Migration scripts for schema changes
-
-**Cost Estimate:**
-- Supabase: Free tier (500MB, 50k MAU)
-- Railway: ~$5-10/month
-- Vercel: Free tier
-- Total: ~$5-10/month for <100 users
+- [ ] Improved job title/company parsing (✅ Done!)
+- [ ] Deleted jobs tracking (✅ Done!)
+- [ ] Unified applications view (✅ Done!)
+- [ ] Enhanced error handling
+- [ ] Performance optimizations
 
 ---
 
-### 3. API Key Management 🔐
-**Status:** Not Started
-**Priority:** P0
-**Estimated Effort:** 3-5 days
+## 📚 Phase 2: Documentation & Community (Priority: High)
 
-**Current State:** Anthropic API key likely hardcoded/in .env
+**Goal:** Make Hammy easy to discover, install, and contribute to
 
-**Required Changes:**
-- [ ] Secure key storage (environment variables on server)
-- [ ] Rate limiting per user
-- [ ] Cost tracking per user
-- [ ] Decision: Provide your API key OR users bring their own (BYOK)
-- [ ] Usage dashboard for users
-- [ ] Billing/credits system if providing API access
+### Documentation Improvements
 
-**Business Model Options:**
-1. **Free Tier:** 10 AI analyses/month, then pay
-2. **BYOK:** Users provide their own Anthropic API key
-3. **Freemium:** Basic features free, AI features require subscription
-4. **Closed Beta:** You cover costs during testing
+- [ ] **Contributing Guide** (CONTRIBUTING.md)
+  - Code style guidelines
+  - Git workflow (feature branches, PRs)
+  - How to run tests
+  - Issue templates
 
----
+- [ ] **Deployment Guides**
+  - ✅ Docker deployment (Done!)
+  - [ ] Railway/Render deployment
+  - [ ] DigitalOcean/AWS deployment
+  - [ ] Raspberry Pi deployment
+  - [ ] Troubleshooting guide
 
-### 4. Gmail OAuth Per User 📧
-**Status:** Not Started
-**Priority:** P0
-**Estimated Effort:** 2-3 days
+- [ ] **User Documentation**
+  - [ ] Quick start guide (5-minute setup)
+  - [ ] Gmail OAuth setup walkthrough
+  - [ ] Configuration guide (config.yaml explained)
+  - [ ] Resume template guide
+  - [ ] Custom email sources guide
+  - [ ] Chrome extension installation
+  - [ ] Video tutorials (optional)
 
-**Current State:** Uses your personal Gmail credentials
+- [ ] **API Documentation**
+  - [ ] REST API reference
+  - [ ] Webhook endpoints
+  - [ ] Plugin development guide
 
-**Required Changes:**
-- [ ] OAuth flow per user (not just admin)
-- [ ] Store OAuth tokens per user in encrypted storage
-- [ ] Token refresh handling
-- [ ] Revocation handling (user disconnects Gmail)
-- [ ] Clear permission scopes explanation
-- [ ] Handle rate limits per user
+### Community Building
 
-**Files to Modify:**
-- `local_app.py` (lines 769-893) - email scanning
-- Add `oauth_tokens` table with user-specific credentials
+- [ ] **GitHub Setup**
+  - [ ] Issue templates (bug report, feature request)
+  - [ ] Pull request template
+  - [ ] GitHub Actions for CI/CD
+  - [ ] Automated testing on PR
+  - [ ] Code coverage reports
+  - [ ] Automated Docker builds
 
----
-
-### 5. Domain & SSL 🌐
-**Status:** Not Started
-**Priority:** P0
-**Estimated Effort:** 4 hours
-
-**Current State:** localhost:3000 and localhost:5000
-
-**Required Changes:**
-- [ ] Purchase domain (e.g., hammyhire.com)
-- [ ] SSL certificate (Let's Encrypt - free via Vercel/Railway)
-- [ ] Configure DNS
-- [ ] Update OAuth redirect URIs
-- [ ] HTTPS everywhere
+- [ ] **Community Channels**
+  - [ ] GitHub Discussions for Q&A
+  - [ ] Discord server (optional)
+  - [ ] Reddit community (optional)
+  - [ ] Monthly development updates
 
 ---
 
-## 🎨 UX/Onboarding - High Priority
+## 🔌 Phase 3: Plugin & Extension Ecosystem
 
-### 6. Welcome/Onboarding Flow ✨
-**Status:** Not Started
-**Priority:** P1
-**Estimated Effort:** 1 week
+**Goal:** Enable community contributions through a plugin system
 
-**Required Features:**
-- [ ] Landing page explaining Hammy's value prop
-- [ ] Sign up flow with email verification
-- [ ] Welcome wizard:
-  - Upload first resume
-  - Connect Gmail (with clear permissions)
-  - Set job preferences
-  - Run first scan
-  - Tour of features
-- [ ] Interactive tutorial highlighting key features
-- [ ] Progress tracker (e.g., "3/5 steps complete")
+### Plugin Architecture
 
----
+- [ ] **Core Plugin System**
+  - [ ] Plugin interface definition
+  - [ ] Plugin discovery and loading
+  - [ ] Plugin configuration
+  - [ ] Security sandboxing
 
-### 7. How-To Guide / Documentation 📚
-**Status:** Not Started
-**Priority:** P1
-**Estimated Effort:** 2-3 days
+- [ ] **Official Plugins**
+  - [ ] WeWorkRemotely integration
+  - [ ] RemoteOK scraper
+  - [ ] AngelList/Wellfound scraper
+  - [ ] HackerNews "Who's Hiring" parser
+  - [ ] Glassdoor ratings integration
+  - [ ] Salary data (Levels.fyi API)
+  - [ ] LinkedIn company insights
 
-**Required Pages:**
-- [ ] `/help` page or modal with sections:
-  - Getting Started
-  - Connecting Gmail
-  - Understanding Job Scores
-  - Using the Browser Extension
-  - Managing Resumes
-  - Custom Email Sources
-  - Tips & Tricks
-- [ ] FAQ page
-- [ ] Video walkthrough (optional but helpful)
-- [ ] Troubleshooting guide
+- [ ] **Custom Email Parser Plugins**
+  - [ ] Plugin template for custom job boards
+  - [ ] AI-assisted parser generator
+  - [ ] Community parser repository
+
+- [ ] **Export Plugins**
+  - [ ] Notion integration
+  - [ ] Airtable export
+  - [ ] Google Sheets sync
+  - [ ] Trello/Asana integration
+  - [ ] JSON/CSV export (enhanced)
 
 ---
 
-### 8. Better Empty States 🎭
-**Status:** Not Started
-**Priority:** P1
-**Estimated Effort:** 4 hours
+## 🎨 Phase 4: UX Improvements
 
-**Current State:** Generic "No jobs found" messages
+**Goal:** Make Hammy delightful to use
 
-**Improvements Needed:**
-- [ ] Discovered Jobs empty state: "No jobs yet! Click 'Scan Emails' to get started"
-- [ ] Resumes empty state: "Upload your first resume to unlock AI-powered matching"
-- [ ] External Applications empty state: "Track jobs you apply to manually here"
-- [ ] Add illustrative graphics (hamster looking for jobs!)
-- [ ] Include actionable CTA buttons in each empty state
+### Quick Wins (Easy but Impactful)
 
----
+- [ ] **Keyboard Shortcuts** ⌨️
+  - [ ] `J/K` - Navigate jobs up/down
+  - [ ] `/` - Focus search
+  - [ ] `Enter` - Expand selected job
+  - [ ] `D` - Delete selected job
+  - [ ] `S` - Scan emails
+  - [ ] `?` - Show shortcuts help modal
+  - [ ] `Esc` - Close modals
 
-### 9. Loading States & Feedback 🔄
-**Status:** Partially Implemented
-**Priority:** P1
-**Estimated Effort:** 1 day
+- [x] **Dark Mode** 🌙 (✅ Done!)
+  - [x] Toggle in settings
+  - [x] Respect system preference
+  - [x] Smooth transitions
+  - [x] Persistent preference
 
-**Current State:** Some spinners, but inconsistent
+- [ ] **Better Empty States** 🎭
+  - [ ] Illustrated empty states (hamster graphics!)
+  - [ ] Actionable CTAs in each empty state
+  - [ ] Onboarding hints for first-time users
 
-**Improvements Needed:**
-- [ ] Skeleton loaders for job lists
-- [ ] Progress bars for long operations (scanning 100 emails)
-- [ ] Toast notifications for success/error (replace alerts)
-- [ ] "Estimated time remaining" for AI operations
-- [ ] Batch operation progress (e.g., "Analyzing job 5 of 23...")
-- [ ] Non-blocking notifications (don't use `alert()`)
+- [ ] **Improved Loading States** 🔄
+  - [ ] Skeleton loaders for job lists (✅ Partially done!)
+  - [ ] Progress bars for long operations
+  - [ ] Toast notifications for success/error
+  - [ ] Batch operation progress ("Analyzing 5 of 23...")
 
----
+### Advanced Features
 
-## 📄 Legal & Trust - Required for Test Users
+- [ ] **Advanced Search & Filters** 🔎
+  - [ ] Salary range filtering
+  - [ ] Date range filters
+  - [ ] Keywords in description
+  - [ ] Remote/hybrid/onsite filter
+  - [ ] Save filter presets
+  - [ ] Boolean search operators
 
-### 10. Privacy Policy 🔒
-**Status:** Not Started
-**Priority:** P0
-**Estimated Effort:** 4 hours (using template)
+- [ ] **Timeline & Kanban Views** 📅
+  - [ ] Visual timeline of applications
+  - [ ] Kanban board (drag-and-drop)
+  - [ ] Application funnel analytics
+  - [ ] "Days since applied" tracking
 
-**Must Include:**
-- [ ] What data you collect (emails, resumes, job data)
-- [ ] How you use it (AI analysis, job matching)
-- [ ] Third-party services (Anthropic Claude, Gmail API)
-- [ ] Data retention policies
-- [ ] User rights (export, delete)
-- [ ] Cookie policy
-- [ ] Contact information
-
-**Resources:**
-- Use template from [TermsFeed](https://www.termsfeed.com/privacy-policy-generator/)
-- Customize for job search context
-
----
-
-### 11. Terms of Service ⚖️
-**Status:** Not Started
-**Priority:** P0
-**Estimated Effort:** 4 hours (using template)
-
-**Must Include:**
-- [ ] Acceptable use policy
-- [ ] Service availability (beta disclaimer)
-- [ ] Liability limitations
-- [ ] Account termination conditions
-- [ ] Intellectual property rights
-- [ ] Dispute resolution
+- [ ] **Interview Management** 🎤
+  - [ ] Interview scheduler
+  - [ ] Prep notes per company
+  - [ ] Calendar integration (.ics export)
+  - [ ] Reminder system
+  - [ ] Post-interview reflection
 
 ---
 
-### 12. Data Export/Delete (GDPR Compliance) 🗂️
-**Status:** Not Started
-**Priority:** P0
-**Estimated Effort:** 1 day
+## 🔒 Phase 5: Privacy & Security Enhancements
 
-**Required Features:**
-- [ ] "Export My Data" button (download all jobs/resumes as JSON/CSV)
-- [ ] "Delete My Account" flow with confirmation
-- [ ] Clear data retention policies
-- [ ] Automated data deletion within 30 days of account deletion
-- [ ] Email confirmation of data deletion
+**Goal:** Make Hammy the most privacy-conscious job tracker
 
----
+### Privacy Features
 
-### 13. Email Permissions Notice 📨
-**Status:** Not Started
-**Priority:** P1
-**Estimated Effort:** 2 hours
+- [ ] **Local-Only Mode**
+  - [ ] Disable all external API calls (optional)
+  - [ ] Local AI models (Ollama integration)
+  - [ ] Offline mode support
 
-**Current State:** Just connects to Gmail
+- [ ] **Data Control**
+  - [ ] One-click data export (all formats)
+  - [ ] Encrypted database option
+  - [ ] Data retention policies (user-configurable)
+  - [ ] Automatic PII redaction
 
-**Better Approach:**
-- [ ] Clear explanation: "We only read job alert emails from LinkedIn, Indeed, etc."
-- [ ] List exact senders we scan
-- [ ] "We never send emails on your behalf"
-- [ ] Show permissions dialog before OAuth
-- [ ] Allow users to review/revoke access anytime
+- [ ] **Security Hardening**
+  - [ ] API key encryption at rest
+  - [ ] OAuth token encryption
+  - [ ] Secure credential storage
+  - [ ] Security audit checklist
+  - [ ] CVE monitoring
 
 ---
 
-## 🔧 Technical Improvements - Medium Priority
+## 📊 Phase 6: Analytics & Insights
 
-### 14. Error Handling 🚨
-**Status:** Basic
-**Priority:** P2
-**Estimated Effort:** 3 days
+**Goal:** Help users understand their job search patterns
 
-**Current State:** Console errors, generic messages
+### Analytics Dashboard
 
-**Improvements Needed:**
-- [ ] User-friendly error messages
-- [ ] Retry mechanisms for API failures
-- [ ] Offline detection
-- [ ] "Something went wrong" fallback with support contact
-- [ ] Error logging service (Sentry)
-- [ ] Graceful degradation when services unavailable
+- [ ] **Job Search Metrics**
+  - [ ] Application success rate
+  - [ ] Average time to response
+  - [ ] Response rate by source (LinkedIn vs Indeed)
+  - [ ] Application velocity (apps/week)
+  - [ ] Best times to apply (day of week)
 
----
+- [ ] **AI Insights**
+  - [ ] Top skills mentioned in your matches
+  - [ ] Common gaps in your profile
+  - [ ] Recommended skills to learn
+  - [ ] Market trend analysis
 
-### 15. Performance Optimization ⚡
-**Status:** Not Started
-**Priority:** P2
-**Estimated Effort:** 1 week
-
-**Improvements Needed:**
-- [ ] Pagination (load 20 jobs at a time)
-- [ ] Infinite scroll OR "Load More" button
-- [ ] Virtual scrolling for large lists
-- [ ] Image optimization (company logos)
-- [ ] Code splitting (React lazy loading)
-- [ ] Client-side caching (job data, scores)
-- [ ] Database indexing on common queries
+- [ ] **Exportable Reports**
+  - [ ] Weekly summary emails (opt-in)
+  - [ ] Monthly analytics PDF
+  - [ ] Custom date range reports
 
 ---
 
-### 16. Monitoring & Analytics 📊
-**Status:** Not Started
-**Priority:** P2
-**Estimated Effort:** 2 days
+## 🧪 Phase 7: Testing & Quality
 
-**Add:**
-- [ ] Error tracking (Sentry or similar)
-- [ ] Usage analytics (Plausible/PostHog - privacy-friendly)
-- [ ] Performance monitoring (Web Vitals)
-- [ ] User feedback widget
-- [ ] Feature usage tracking
-- [ ] Conversion funnels
+**Goal:** Maintain high code quality and reliability
 
----
+### Testing Infrastructure
 
-### 17. Automated Backups 💾
-**Status:** Not Started
-**Priority:** P2
-**Estimated Effort:** 1 day
+- [x] **Unit Tests** (✅ Basic coverage done!)
+  - [x] Email parser tests
+  - [x] Config validation tests
+  - [x] Location filtering tests
+  - [ ] Expand to 80%+ coverage
 
-**Add:**
-- [ ] Automated daily backups (Supabase handles this)
-- [ ] Point-in-time recovery
-- [ ] User-triggered backups ("Download Backup" button)
-- [ ] Backup verification tests
+- [ ] **Integration Tests**
+  - [ ] End-to-end email scanning
+  - [ ] API endpoint testing
+  - [ ] Database migration testing
 
----
+- [ ] **UI Tests**
+  - [ ] Playwright/Cypress tests
+  - [ ] Visual regression tests
+  - [ ] Accessibility tests (WCAG compliance)
 
-## ✨ Feature Improvements - Nice to Have
-
-### 18. Enhanced Job Deduplication 🔍
-**Status:** Basic (checks URL + title+company)
-**Priority:** P3
-**Estimated Effort:** 2 days
-
-**Enhancements:**
-- [ ] Fuzzy matching for similar titles ("Sr. Engineer" vs "Senior Engineer")
-- [ ] Show "Similar to..." for near-duplicates
-- [ ] Manual merge duplicate option
-- [ ] Machine learning-based duplicate detection
-
-**Files to Modify:**
-- `local_app.py` (line 2271-2277) - deduplication logic
+- [ ] **Performance Tests**
+  - [ ] Load testing (1000+ jobs)
+  - [ ] Memory profiling
+  - [ ] Database query optimization
 
 ---
 
-### 19. Advanced Search & Filters 🔎
-**Status:** Basic search
-**Priority:** P3
-**Estimated Effort:** 3 days
+## 🌐 Phase 8: Multi-Deployment Options
 
-**Add:**
-- [ ] Advanced filters:
-  - Salary range (if detected)
-  - Posted date range
-  - Company size
-  - Keywords in description
-  - Remote/hybrid/onsite
-- [ ] Save filter presets
-- [ ] Search history
-- [ ] Boolean search operators
+**Goal:** Support various hosting environments
 
----
+### Deployment Targets
 
-### 20. Job Application Timeline 📅
-**Status:** Not Started
-**Priority:** P3
-**Estimated Effort:** 1 week
+- [x] **Docker** (✅ Done!)
+  - [x] docker-compose.yml
+  - [x] Multi-platform builds
+  - [ ] Docker Hub automated builds
 
-**Add:**
-- [ ] Visual timeline view
-- [ ] Kanban board (drag jobs between stages)
-- [ ] Application funnel analytics
-- [ ] "Days since applied" tracking
-- [ ] Automated status updates based on email followups
+- [ ] **Cloud Platforms**
+  - [ ] One-click Railway deploy
+  - [ ] One-click Render deploy
+  - [ ] Heroku buildpack
+  - [ ] Google Cloud Run
+  - [ ] AWS ECS/Fargate
 
----
+- [ ] **Self-Hosted**
+  - [ ] Ubuntu/Debian .deb package
+  - [ ] Raspberry Pi optimized image
+  - [ ] Synology NAS package
+  - [ ] Unraid template
 
-### 21. Interview Management 🎤
-**Status:** Not Started
-**Priority:** P3
-**Estimated Effort:** 1 week
-
-**Add:**
-- [ ] Interview scheduler
-- [ ] Interview prep notes per company
-- [ ] Calendar integration (Google Calendar)
-- [ ] Reminder notifications
-- [ ] Post-interview reflection log
+- [ ] **Desktop Apps**
+  - [ ] Electron wrapper
+  - [ ] macOS .app bundle
+  - [ ] Windows installer
+  - [ ] Linux AppImage
 
 ---
 
-### 22. Company Intelligence 🏢
-**Status:** Basic tracking
-**Priority:** P3
-**Estimated Effort:** 1 week
+## 🤝 Phase 9: Integrations & Ecosystem
 
-**Add:**
-- [ ] Auto-fetch company info (Clearbit API)
-- [ ] Company ratings (Glassdoor integration)
-- [ ] Recent news about company (News API)
-- [ ] Employee connections (LinkedIn integration)
-- [ ] Company culture insights
+**Goal:** Play nicely with other tools
 
----
+### Official Integrations
 
-### 23. Networking Tracker 🤝
-**Status:** Not Started
-**Priority:** P3
-**Estimated Effort:** 1 week
+- [ ] **Email Providers**
+  - [x] Gmail (✅ Done!)
+  - [ ] Outlook/Office 365
+  - [ ] Apple Mail (via IMAP)
+  - [ ] ProtonMail (via Bridge)
 
-**Add:**
-- [ ] Contact management (recruiters, referrals)
-- [ ] Interaction history
-- [ ] Follow-up reminders
-- [ ] LinkedIn integration
-- [ ] Email template library
+- [ ] **Job Boards**
+  - [x] LinkedIn (✅ Done!)
+  - [x] Indeed (✅ Done!)
+  - [x] Greenhouse (✅ Done!)
+  - [x] Wellfound/AngelList (✅ Done!)
+  - [ ] ZipRecruiter
+  - [ ] Glassdoor
+  - [ ] Monster
+  - [ ] CareerBuilder
 
----
+- [ ] **Productivity Tools**
+  - [ ] Notion database sync
+  - [ ] Airtable integration
+  - [ ] Google Sheets export
+  - [ ] Trello boards
+  - [ ] Asana tasks
+  - [ ] Slack notifications
 
-### 24. Analytics Dashboard 📈
-**Status:** Basic stats only
-**Priority:** P3
-**Estimated Effort:** 1 week
-
-**Add:**
-- [ ] Application success rate
-- [ ] Average time to response
-- [ ] Top companies by fit score
-- [ ] Application velocity (apps/week)
-- [ ] Response rate by source (LinkedIn vs Indeed)
-- [ ] Funnel conversion rates
+- [ ] **Calendar & Scheduling**
+  - [ ] Google Calendar
+  - [ ] Outlook Calendar
+  - [ ] Calendly integration
+  - [ ] .ics file export
 
 ---
 
-## 🎯 Quick Wins - Easy but Impactful
+## 🎁 Phase 10: Advanced AI Features
 
-### 25. Keyboard Shortcuts ⌨️
-**Status:** Not Started
-**Priority:** P2
-**Estimated Effort:** 4 hours
+**Goal:** Leverage AI for deeper insights
 
-**Add:**
-- [ ] `J/K` - Navigate jobs up/down
-- [ ] `/` - Focus search
-- [ ] `Enter` - Open selected job
-- [ ] `D` - Delete selected job
-- [ ] `?` - Show shortcuts help modal
-- [ ] `Esc` - Close modals
+### Enhanced AI Capabilities
 
----
+- [ ] **Smart Recommendations**
+  - [ ] Job recommendation engine
+  - [ ] Similar jobs suggestion
+  - [ ] Company culture fit analysis
+  - [ ] Salary negotiation insights
 
-### 26. Dark Mode 🌙
-**Status:** Not Started
-**Priority:** P2
-**Estimated Effort:** 1 day
+- [ ] **Content Generation**
+  - [x] Cover letter generation (✅ Done!)
+  - [ ] Thank-you email templates
+  - [ ] Follow-up email generation
+  - [ ] Interview prep questions
+  - [ ] Resume bullet point suggestions
 
-**Add:**
-- [ ] Dark mode toggle in settings
-- [ ] Respect system preference (`prefers-color-scheme`)
-- [ ] Smooth transition between modes
-- [ ] Persist user preference
-- [ ] Update Tailwind config for dark mode classes
+- [ ] **Analysis Improvements**
+  - [ ] Multi-model support (GPT, Gemini, local models)
+  - [ ] Fine-tuned models for job matching
+  - [ ] Sentiment analysis of job descriptions
+  - [ ] Red flag detection (toxic culture, unrealistic requirements)
 
 ---
 
-### 27. Job Notes 📝
-**Status:** Not Started
-**Priority:** P2
-**Estimated Effort:** 2 hours
+## 📦 Phase 11: Distribution & Discovery
 
-**Add:**
-- [ ] Quick notes field on each job card
-- [ ] Interview date field
-- [ ] Key takeaways section
-- [ ] Auto-save as user types
+**Goal:** Make Hammy easy to find and install
 
-**Database Changes:**
-- Notes field already exists in schema!
+### Distribution Channels
 
----
+- [ ] **Package Managers**
+  - [ ] npm/npx installer
+  - [ ] Homebrew formula (macOS/Linux)
+  - [ ] Chocolatey package (Windows)
+  - [ ] pip package (Python)
 
-### 28. Status Automation 🤖
-**Status:** Partially implemented (followup detection)
-**Priority:** P2
-**Estimated Effort:** 2 days
+- [ ] **Marketplace Listings**
+  - [ ] Chrome Web Store (extension)
+  - [ ] Firefox Add-ons
+  - [ ] Docker Hub
+  - [ ] GitHub Marketplace
 
-**Smart Features:**
-- [ ] Auto-move to "Interviewing" when interview email detected
-- [ ] Auto-move to "Rejected" from rejection emails
-- [ ] Suggest status changes based on email patterns
-- [ ] "Undo" option for automated changes
+- [ ] **Marketing Site**
+  - [ ] Landing page with demo
+  - [ ] Feature showcase
+  - [ ] Video tutorials
+  - [ ] Blog with job search tips
+  - [ ] SEO optimization
 
 ---
 
-### 29. Email Templates 📧
-**Status:** Not Started
-**Priority:** P3
-**Estimated Effort:** 1 day
+## 🔧 Technical Debt & Refactoring
 
-**Add Library Of:**
-- [ ] Thank you emails (post-interview)
-- [ ] Follow-up emails
-- [ ] Withdrawal emails
-- [ ] Acceptance/decline emails
-- [ ] Variable substitution (company name, role, etc.)
+**Goal:** Maintain clean, maintainable codebase
 
----
+### Code Quality
 
-### 30. Mobile Responsiveness 📱
-**Status:** Desktop-only
-**Priority:** P2
-**Estimated Effort:** 3 days
+- [ ] **Architecture Improvements**
+  - [ ] Separate concerns (routes.py, parsers.py, analyzer.py)
+  - [ ] Service layer pattern
+  - [ ] Dependency injection
+  - [ ] Type hints throughout
 
-**Fix:**
-- [ ] Responsive design for all views
-- [ ] Mobile-friendly tables (card layout)
-- [ ] Touch-friendly buttons
-- [ ] Hamburger menu for navigation
-- [ ] Test on iOS/Android
+- [ ] **Database Optimizations**
+  - [ ] Add indexes on common queries
+  - [ ] Query optimization
+  - [ ] Connection pooling
+  - [ ] Migration system (Alembic)
+
+- [ ] **Frontend Refactor**
+  - [ ] Component library (extract reusable components)
+  - [ ] State management (Zustand/Redux)
+  - [ ] Form validation library (Zod/Yup)
+  - [ ] Error boundary components
 
 ---
 
-### 31. Custom Email Sources (User-Defined) ✉️
-**Status:** In Progress ⚡
-**Priority:** P1
-**Estimated Effort:** 2-3 days
+## 🏆 Gamification & Motivation (Fun!)
 
-**Current State:** Hard-coded email sources (LinkedIn, Indeed, etc.)
+**Goal:** Make job searching less painful
 
-**Goal:** Let users add custom job board email patterns
+### Motivational Features
 
-**Implementation:**
-- [ ] Database table for custom email sources (per user)
-- [ ] Settings UI to add/edit/delete sources
-- [ ] Pattern fields: sender email, subject keywords, job board name
-- [ ] Test pattern feature (preview last 30 days)
-- [ ] AI-assisted pattern detection (paste example email)
-- [ ] Generic email parser for unknown formats
-- [ ] Enable/disable toggles for each source
+- [ ] **Achievement System** 🏅
+  - [ ] "First Application" badge
+  - [ ] "Interview Champion" (5 interviews)
+  - [ ] "Persistent" (100 applications)
+  - [ ] "Perfect Match" (90+ score job)
 
-**Files to Modify:**
-- `local_app.py` (lines 796-811) - query builder
-- `config_loader.py` - already has placeholder!
-- Add new API endpoints: `/api/email-sources`
+- [ ] **Streaks & Goals** 🔥
+  - [ ] Daily application streak
+  - [ ] Weekly goals (e.g., "Apply to 5 jobs")
+  - [ ] Progress visualization
+  - [ ] Motivational messages
 
----
-
-## 🚀 Deployment Strategy for Test Users
-
-### Option A: Hosted SaaS (Recommended)
-
-**Stack:**
-- **Frontend:** Vercel/Netlify (free tier)
-- **Backend:** Railway/Render (starts free)
-- **Database:** Supabase (free tier)
-- **Auth:** Supabase Auth
-
-**Steps:**
-1. Add authentication
-2. Add user scoping to all DB queries
-3. Deploy backend to Railway
-4. Deploy frontend to Vercel
-5. Point custom domain
-6. Set up environment variables
-7. Add monitoring
-
-**Timeline:** 3-4 weeks
+- [ ] **Fun Stats** 📊
+  - [ ] "Most applied-to company"
+  - [ ] "Fastest rejection" (sad but funny)
+  - [ ] "Longest interview process"
+  - [ ] Year-end recap (Spotify Wrapped style)
 
 ---
 
-### Option B: Self-Hosted Invites (For Friends/Family)
+## 📋 Community Roadmap Voting
 
-**Approach:**
-- Keep localhost
-- Create separate user accounts
-- Give each tester their own API keys
-- Manual onboarding via video call
-- Collect feedback
+**Goal:** Let the community decide priorities
 
-**Timeline:** 1 week (much faster)
+### Community Features (Vote on GitHub Discussions!)
 
----
-
-## 📋 Recommended MVP Roadmap
-
-### Phase 1: Quick Wins & Validation (Week 1-2) ✅ IN PROGRESS
-
-**Goal:** Add high-value features without deployment complexity
-
-- [x] ~~Custom Email Sources~~ (Starting now!)
-- [ ] Better Empty States & Loading Feedback
-- [ ] Dark Mode
-- [ ] Keyboard Shortcuts
-- [ ] Job Notes
-- [ ] Enhanced Deduplication
-- [ ] Export Data (CSV/JSON)
-
-**Outcome:** Feature-rich local tool ready for close-circle testing
+- [ ] **Most Requested Features** (examples)
+  - [ ] Multi-language support (i18n)
+  - [ ] Resume builder (integrated)
+  - [ ] Networking/referral tracker
+  - [ ] Salary comparison tool
+  - [ ] Company review aggregation
+  - [ ] Job market trends dashboard
 
 ---
 
-### Phase 2: Multi-User Foundation (Week 3-4)
+## 🎯 Quick Wins Already Completed! ✅
 
-**Goal:** Enable multiple users to use the app
-
-- [ ] Supabase setup (auth + PostgreSQL)
-- [ ] User registration/login
-- [ ] User-scoped queries (`WHERE user_id = ?`)
-- [ ] Per-user Gmail OAuth
-- [ ] Deploy backend to Railway
-- [ ] Deploy frontend to Vercel
-- [ ] Basic landing page
-- [ ] Privacy policy & Terms of Service
-
-**Outcome:** Hosted app ready for 5-10 beta testers
-
----
-
-### Phase 3: Polish & Beta Testing (Week 5-6)
-
-**Goal:** Improve UX based on feedback
-
-- [ ] Toast notifications (replace alerts)
-- [ ] Error handling improvements
-- [ ] Welcome wizard
-- [ ] Help documentation
-- [ ] User feedback widget
-- [ ] Analytics setup
-
-**Outcome:** Polished beta ready for broader audience
+- [x] Custom email sources
+- [x] Dark mode
+- [x] Job notes
+- [x] Better deduplication
+- [x] Data export
+- [x] Mobile responsive
+- [x] Docker deployment
+- [x] Full test suite
+- [x] Comprehensive documentation
+- [x] Error handling & logging
+- [x] Deleted jobs tracking
+- [x] Job description paste & rescore
+- [x] Unified applications view
+- [x] Improved parsing logic
 
 ---
 
-### Phase 4: Scale & Monetization (Week 7+)
+## 🚀 Deployment Options for Open Source Users
 
-**Goal:** Prepare for growth
+### Option 1: Docker (Recommended for Most Users)
+```bash
+git clone https://github.com/yourusername/hammy
+cd hammy
+cp config.example.yaml config.yaml
+# Edit config.yaml with your info
+docker-compose up -d
+```
+**Timeline:** 10 minutes
 
-- [ ] Advanced features based on user requests
-- [ ] Performance optimization
-- [ ] Mobile responsiveness
-- [ ] Billing/subscription system (if applicable)
-- [ ] Marketing site
-- [ ] SEO optimization
+### Option 2: Local Python
+```bash
+git clone https://github.com/yourusername/hammy
+cd hammy
+pip install -r requirements-local.txt
+python local_app.py
+```
+**Timeline:** 5 minutes
 
----
-
-## 💰 Cost Considerations
-
-### Current Costs (Per User/Month)
-
-**Anthropic API:**
-- ~$0.03-0.10 per job analyzed
-- If 10 users analyze 50 jobs/month = ~$15-50/month
-
-### Monetization Strategies
-
-1. **Free Tier Limits:** 10 jobs analyzed/month, then pay ($9.99/month)
-2. **BYOK:** Users bring their own Anthropic API key (free app)
-3. **Freemium:** Basic features free, AI features paid ($14.99/month)
-4. **Closed Beta:** You cover costs for testing period
-
-### Infrastructure Costs (Estimated)
-
-| Service | Plan | Cost |
-|---------|------|------|
-| Supabase | Free tier | $0 (up to 500MB, 50k MAU) |
-| Railway | Hobby | ~$5-10/month |
-| Vercel | Free tier | $0 |
-| Domain | .com | ~$12/year |
-| **Total** | | **~$6-11/month** |
+### Option 3: Cloud Platform (Railway/Render)
+- One-click deploy button
+- Auto-managed hosting
+- Still YOUR data
+**Timeline:** 2 minutes
 
 ---
 
-## 🎯 Summary: What You Need NOW
+## 💰 Cost Considerations (User-Facing)
 
-### To Share with 5-10 Test Users Tomorrow:
+### What Users Pay For
 
-**Absolute Minimum (1 week):**
-- ✅ User authentication (Supabase Auth)
-- ✅ Deploy backend (Railway)
-- ✅ Deploy frontend (Vercel)
-- ✅ Basic landing page
-- ✅ Privacy policy page
-- ✅ Help/FAQ page
-- ✅ Better error messages
+**Required:**
+- Anthropic API key (~$0.03-0.10 per job analyzed)
+  - Estimate: $3-5/month for moderate job searching
 
-**Nice to Have (2 weeks):**
-- Welcome wizard
-- Data export
-- Mobile responsive
-- Toast notifications
-- Analytics
+**Optional:**
+- Cloud hosting (if not self-hosting)
+  - Railway: ~$5-10/month
+  - DigitalOcean: ~$5/month
+  - AWS Free tier: $0 for 12 months
 
-**Can Wait:**
-- Everything else can be added based on user feedback
-
----
-
-## 🌟 Biggest Wins for Least Effort
-
-1. **Add Supabase** (2 days) - Solves auth, database, hosting ⭐⭐⭐
-2. **Landing page** (1 day) - Explains value, builds trust ⭐⭐⭐
-3. **Help modal** (1 day) - Reduces support burden ⭐⭐
-4. **Toast notifications** (1 day) - Better UX immediately ⭐⭐⭐
-5. **Error boundaries** (1 day) - Prevents crashes ⭐⭐
-6. **Custom Email Sources** (2 days) - Competitive differentiation ⭐⭐⭐
+**Total:** $3-15/month (vs. $29-99/month for commercial alternatives)
 
 ---
 
 ## 📊 Progress Tracker
 
-**Last Updated:** December 14, 2024
+**Last Updated:** December 16, 2024
 
-| Category | Completion | Items Done | Total Items |
-|----------|-----------|------------|-------------|
-| Critical (Must Have) | 0% | 0 | 5 |
-| UX/Onboarding | 0% | 0 | 4 |
-| Legal & Trust | 0% | 0 | 4 |
-| Technical Improvements | 0% | 0 | 4 |
-| Feature Improvements | 0% | 0 | 7 |
-| Quick Wins | 5% | 0.5 | 7 |
-| **OVERALL** | **3%** | **0.5** | **31** |
+| Phase | Focus | Completion | Priority |
+|-------|-------|------------|----------|
+| Phase 1: Core Features | ✅ Production-ready tool | 95% | Critical |
+| Phase 2: Documentation | 📚 Guides & contributing | 30% | High |
+| Phase 3: Plugins | 🔌 Extensibility | 0% | Medium |
+| Phase 4: UX | 🎨 Delightful experience | 40% | Medium |
+| Phase 5: Privacy | 🔒 Security hardening | 20% | High |
+| Phase 6: Analytics | 📊 Insights dashboard | 10% | Low |
+| Phase 7: Testing | 🧪 Quality assurance | 35% | High |
+| Phase 8: Deployment | 🌐 Multi-platform | 40% | Medium |
+| Phase 9: Integrations | 🤝 Ecosystem | 15% | Low |
+| Phase 10: Advanced AI | 🎁 Smart features | 10% | Low |
 
 ---
 
 ## 🎬 Next Actions
 
-**Today (December 14, 2024):**
-1. ✅ Create this roadmap document
-2. 🔄 Add Roadmap tab to web app
-3. 🔄 Implement custom email sources UI
-4. 🔄 Add dark mode toggle
-5. 🔄 Add keyboard shortcuts
-6. 🔄 Add job notes field
-
 **This Week:**
-- Complete Phase 1 (Quick Wins)
-- Share with 3-5 friends for feedback
-- Document pain points
+1. ✅ Complete open-source preparation (security, docs, tests, Docker)
+2. ✅ Add deleted jobs tracking
+3. ✅ Improve job parsing logic
+4. ✅ Fix light mode styling
+5. ✅ Add mobile responsiveness
+6. ✅ Combine applications view
+7. [ ] Create CONTRIBUTING.md
+8. [ ] Add GitHub issue templates
+9. [ ] Record quick-start video
+10. [ ] Announce on Reddit/HackerNews
 
-**Next Week:**
-- Decide: Deploy or iterate?
-- If deploying: Start Phase 2
-- If iterating: Build more Phase 1 features
+**Next Sprint:**
+- Complete Phase 2 (Documentation & Community)
+- Set up GitHub Discussions
+- Create first community plugins
+- Improve test coverage to 80%+
+
+**Long-term:**
+- Build plugin ecosystem
+- Attract contributors
+- Regular release cadence (monthly)
+- Community feedback integration
 
 ---
 
 ## 🤝 Contributing
 
-This is a solo project, but future collaborators can reference this roadmap to understand priorities and technical decisions.
+Hammy is an **open-source, community-driven project**! We welcome contributions of all kinds:
 
-**Questions?** Open an issue or contact the maintainer.
+- 🐛 Bug reports and fixes
+- ✨ New features and enhancements
+- 📖 Documentation improvements
+- 🧪 Tests and quality improvements
+- 🌍 Translations and i18n
+- 🔌 Plugins and integrations
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+**Questions?** Open a GitHub Discussion or issue!
 
 ---
 
-**Remember:** The current feature set is already strong! Focus on multi-user support and deployment before adding more features. Ship, learn, iterate. 🚀
+## 🌟 Why Open Source?
+
+**Privacy:** Your job search data is sensitive. Self-hosting ensures YOUR data stays YOURS.
+
+**Transparency:** Open code means you can verify exactly what Hammy does with your data.
+
+**Customization:** Modify Hammy to fit YOUR workflow, not a company's business model.
+
+**Community:** Together we build better tools than any one company could.
+
+**Cost:** Free to use, pay only for the AI API you choose.
+
+---
+
+**Remember:** Hammy is feature-complete as a local tool! Future work focuses on polish, extensibility, and community growth. Ship, learn, iterate, together! 🚀🐹
