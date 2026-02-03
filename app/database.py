@@ -1,0 +1,256 @@
+"""
+Database - Database operations for Hammy the Hire Tracker
+
+This module handles all database initialization, connection management,
+and migrations for the SQLite database.
+"""
+
+import sqlite3
+import logging
+from pathlib import Path
+from flask import g
+
+logger = logging.getLogger(__name__)
+
+# Database path (relative to app root)
+DB_PATH = Path(__file__).parent.parent / "jobs.db"
+
+
+def init_db():
+    """
+    Initialize SQLite database with required tables.
+
+    Creates tables for:
+    - jobs: Main job listings with AI analysis and scoring
+    - scan_history: Track email scan timestamps to avoid re-processing
+    - watchlist: Companies to monitor for future openings
+    - followups: Interview and application follow-up tracking
+    - external_applications: Track applications made outside the system
+    - tracked_companies: Companies to track with career page and job alert email
+    - resume_variants: Resume storage and management
+    - resume_usage_log: Track resume recommendations
+    - custom_email_sources: Custom job alert email sources
+    - deleted_jobs: Track deleted jobs to avoid re-importing
+
+    Uses WAL (Write-Ahead Logging) mode for better concurrency.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+
+    # Enable WAL mode for better concurrency
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    # Create tables if they don't exist
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS jobs (
+            job_id TEXT PRIMARY KEY,
+            title TEXT,
+            company TEXT,
+            location TEXT,
+            url TEXT,
+            source TEXT,
+            status TEXT DEFAULT 'new',
+            score INTEGER DEFAULT 0,
+            baseline_score INTEGER DEFAULT 0,
+            analysis TEXT,
+            cover_letter TEXT,
+            notes TEXT,
+            raw_text TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            email_date TEXT,
+            is_filtered INTEGER DEFAULT 0,
+            viewed INTEGER DEFAULT 0
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS scan_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            last_scan_date TEXT,
+            emails_found INTEGER,
+            created_at TEXT
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS watchlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT NOT NULL,
+            url TEXT,
+            notes TEXT,
+            created_at TEXT
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS followups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT,
+            subject TEXT,
+            type TEXT,
+            snippet TEXT,
+            email_date TEXT,
+            job_id TEXT,
+            created_at TEXT
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS external_applications (
+            app_id TEXT PRIMARY KEY,
+            job_id TEXT,
+            title TEXT NOT NULL,
+            company TEXT NOT NULL,
+            location TEXT,
+            url TEXT,
+            source TEXT NOT NULL,
+            application_method TEXT,
+            applied_date TEXT NOT NULL,
+            contact_name TEXT,
+            contact_email TEXT,
+            status TEXT DEFAULT 'applied',
+            follow_up_date TEXT,
+            notes TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            is_linked_to_job INTEGER DEFAULT 0,
+            FOREIGN KEY (job_id) REFERENCES jobs(job_id)
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS resume_variants (
+            resume_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            focus_areas TEXT,
+            target_roles TEXT,
+            file_path TEXT,
+            content TEXT,
+            content_hash TEXT,
+            usage_count INTEGER DEFAULT 0,
+            created_at TEXT,
+            updated_at TEXT,
+            is_active INTEGER DEFAULT 1
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS resume_usage_log (
+            log_id TEXT PRIMARY KEY,
+            resume_id TEXT,
+            job_id TEXT,
+            recommended_at TEXT,
+            confidence_score REAL,
+            user_selected INTEGER DEFAULT 0,
+            reasoning TEXT,
+            FOREIGN KEY (resume_id) REFERENCES resume_variants(resume_id),
+            FOREIGN KEY (job_id) REFERENCES jobs(job_id)
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS tracked_companies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_name TEXT NOT NULL,
+            career_page_url TEXT,
+            job_alert_email TEXT,
+            notes TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS custom_email_sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            sender_email TEXT,
+            sender_pattern TEXT,
+            subject_keywords TEXT,
+            enabled INTEGER DEFAULT 1,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS deleted_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_url TEXT NOT NULL UNIQUE,
+            title TEXT,
+            company TEXT,
+            deleted_at TEXT,
+            deleted_reason TEXT DEFAULT 'user_deleted'
+        )
+    ''')
+
+    # Run migrations
+    run_migrations(conn)
+
+    conn.commit()
+    conn.close()
+
+
+def run_migrations(conn):
+    """
+    Run database migrations to add new columns as needed.
+
+    Uses PRAGMA table_info() to check for missing columns and adds them
+    with ALTER TABLE.
+
+    Args:
+        conn: SQLite connection
+    """
+    # Get current columns in jobs table
+    jobs_columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+
+    # Migration: Add job_id column to followups if it doesn't exist
+    followups_columns = {row[1] for row in conn.execute("PRAGMA table_info(followups)").fetchall()}
+    if 'job_id' not in followups_columns:
+        logger.info("Migrating database: adding 'job_id' column to followups...")
+        conn.execute("ALTER TABLE followups ADD COLUMN job_id TEXT")
+
+    # Migration: Add viewed column if it doesn't exist
+    if 'viewed' not in jobs_columns:
+        logger.info("Migrating database: adding 'viewed' column...")
+        conn.execute("ALTER TABLE jobs ADD COLUMN viewed INTEGER DEFAULT 0")
+
+    # Migration: Add job_description column if it doesn't exist
+    if 'job_description' not in jobs_columns:
+        logger.info("Migrating database: adding 'job_description' column...")
+        conn.execute("ALTER TABLE jobs ADD COLUMN job_description TEXT")
+
+    # Migration: Add resume-related columns to jobs table
+    if 'recommended_resume_id' not in jobs_columns:
+        logger.info("Migrating database: adding resume-related columns to jobs...")
+        conn.execute("ALTER TABLE jobs ADD COLUMN recommended_resume_id TEXT")
+        conn.execute("ALTER TABLE jobs ADD COLUMN resume_recommendation TEXT")
+        conn.execute("ALTER TABLE jobs ADD COLUMN selected_resume_id TEXT")
+        conn.execute("ALTER TABLE jobs ADD COLUMN resume_match_score REAL")
+
+
+def get_db():
+    """
+    Create and return a database connection with Row factory.
+
+    Establishes a SQLite connection with a 30-second timeout to handle
+    concurrent access. The Row factory allows dict-like access to rows.
+
+    Returns:
+        sqlite3.Connection: Database connection with Row factory enabled
+
+    Examples:
+        >>> conn = get_db()
+        >>> job = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (id,)).fetchone()
+        >>> print(job['title'])  # Access by column name
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def close_db(e=None):
+    """Close database connection if it exists in flask g."""
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()

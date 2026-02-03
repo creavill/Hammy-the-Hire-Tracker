@@ -1,27 +1,125 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Search, RefreshCw, FileText, ExternalLink, ChevronDown, Filter, Briefcase, CheckCircle, XCircle, Clock, Star, Plus, Mail, Phone, User, Upload, Edit2, Trash2, Sparkles, AlertCircle } from 'lucide-react';
+import { Search, RefreshCw, FileText, ExternalLink, ChevronDown, Filter, Briefcase, CheckCircle, XCircle, Clock, Star, Plus, Mail, Phone, User, Upload, Edit2, Trash2, Sparkles, AlertCircle, Menu, X, Settings, Building2, FileStack, Map } from 'lucide-react';
+
+// Sidebar component for vertical navigation
+function Sidebar({ activeView, setActiveView, counts, sidebarOpen, setSidebarOpen }) {
+  const navItems = [
+    { id: 'all_applications', label: 'Jobs', icon: Briefcase, count: counts.jobs },
+    { id: 'followups', label: 'Follow-ups', icon: Mail, count: null },
+    { id: 'resumes', label: 'Resumes', icon: FileStack, count: counts.resumes },
+    { id: 'companies', label: 'Companies', icon: Building2, count: counts.companies },
+    { id: 'settings', label: 'Settings', icon: Settings, count: null },
+  ];
+
+  return (
+    <>
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-56 bg-charcoal flex flex-col transform transition-transform duration-200 ease-in-out ${
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
+        {/* Close button for mobile */}
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="absolute top-4 right-4 text-slate hover:text-white lg:hidden"
+        >
+          <X size={20} />
+        </button>
+
+        {/* Wordmark */}
+        <div className="p-6 pb-4">
+          <h1 className="font-display text-cream text-2xl">Hammy</h1>
+          <p className="font-body text-slate text-xs tracking-widest uppercase mt-1">the hire tracker</p>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 px-3">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeView === item.id || (item.id === 'all_applications' && activeView === 'roadmap');
+
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveView(item.id);
+                  setSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 mb-1 font-body uppercase tracking-wider text-sm transition-colors ${
+                  isActive
+                    ? 'text-cream border-l-[3px] border-copper bg-white/5'
+                    : 'text-slate hover:text-white border-l-[3px] border-transparent'
+                }`}
+              >
+                <Icon size={18} />
+                <span>{item.label}</span>
+                {item.count !== null && (
+                  <span className={`ml-auto font-mono text-xs ${isActive ? 'text-cream' : 'text-slate'}`}>
+                    {item.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-white/10">
+          <p className="text-slate text-xs font-body">AI-powered job matching</p>
+        </div>
+      </aside>
+    </>
+  );
+}
 
 const API_BASE = '/api';
 
 const STATUS_CONFIG = {
-  new: { label: 'New', color: 'bg-gray-100 text-gray-700', icon: Clock },
-  interested: { label: 'Interested', color: 'bg-blue-100 text-blue-700', icon: Star },
-  applied: { label: 'Applied', color: 'bg-cyan-100 text-cyan-700', icon: CheckCircle },
-  interviewing: { label: 'Interviewing', color: 'bg-purple-100 text-purple-700', icon: Briefcase },
-  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700', icon: XCircle },
-  offer: { label: 'Offer', color: 'bg-yellow-100 text-yellow-700', icon: Star },
-  passed: { label: 'Passed', color: 'bg-gray-100 text-gray-500', icon: XCircle },
+  new: { label: 'New', borderColor: 'border-l-slate', textColor: 'text-slate', icon: Clock },
+  interested: { label: 'Interested', borderColor: 'border-l-copper', textColor: 'text-copper', icon: Star },
+  applied: { label: 'Applied', borderColor: 'border-l-cream', textColor: 'text-ink', icon: CheckCircle },
+  interviewing: { label: 'Interviewing', borderColor: 'border-l-patina', textColor: 'text-patina', icon: Briefcase },
+  rejected: { label: 'Rejected', borderColor: 'border-l-rust', textColor: 'text-rust', icon: XCircle },
+  offer: { label: 'Offer', borderColor: 'border-l-copper', textColor: 'text-copper', icon: Star },
+  passed: { label: 'Passed', borderColor: 'border-l-slate', textColor: 'text-slate', icon: XCircle },
 };
 
+// Generate a consistent color from company name hash
+function getCompanyColor(company) {
+  if (!company) return '#5A5A72'; // slate default
+  const colors = ['#C45D30', '#5B8C6B', '#A0522D', '#5A5A72', '#E8C47C']; // copper, patina, rust, slate, cream
+  let hash = 0;
+  for (let i = 0; i < company.length; i++) {
+    hash = company.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+// Get company initials (1-2 characters)
+function getCompanyInitials(company) {
+  if (!company) return '?';
+  const words = company.trim().split(/\s+/);
+  if (words.length === 1) {
+    return words[0].substring(0, 2).toUpperCase();
+  }
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
 function ScoreBadge({ score }) {
-  let color = 'bg-gray-200 text-gray-700';
-  if (score >= 80) color = 'bg-gradient-to-r from-pink-500 to-pink-600 text-white shadow-md';
-  else if (score >= 60) color = 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm';
-  else if (score >= 40) color = 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-sm';
-  else if (score > 0) color = 'bg-gradient-to-r from-red-400 to-red-500 text-white shadow-sm';
+  // Determine border color based on score
+  let borderColor = 'border-b-rust'; // default for low scores
+  if (score >= 80) borderColor = 'border-b-patina';
+  else if (score >= 60) borderColor = 'border-b-cream';
 
   return (
-    <span className={`px-2 py-1 rounded-full text-sm font-bold ${color}`}>
+    <span className={`font-mono font-bold text-ink border-b-2 ${borderColor} px-1`}>
       {score || '—'}
     </span>
   );
@@ -30,29 +128,26 @@ function ScoreBadge({ score }) {
 function StatusBadge({ status, onChange, statusConfig }) {
   const config_to_use = statusConfig || STATUS_CONFIG;
   const config = config_to_use[status] || config_to_use.new || config_to_use.applied;
-  const Icon = config.icon;
   const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-1 px-2 py-1 rounded-full text-sm ${config.color} hover:opacity-80`}
+        className={`flex items-center gap-1 px-2 py-1 border-l-[3px] ${config.borderColor} ${config.textColor} bg-warm-gray/30 uppercase tracking-wide text-xs font-body hover:bg-warm-gray/50 transition-colors`}
       >
-        <Icon size={14} />
         {config.label}
-        <ChevronDown size={14} />
+        <ChevronDown size={12} />
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 min-w-32">
+        <div className="absolute top-full left-0 mt-1 bg-parchment border border-warm-gray shadow-lg z-10 min-w-32">
           {Object.entries(config_to_use).map(([key, cfg]) => (
             <button
               key={key}
               onClick={() => { onChange(key); setIsOpen(false); }}
-              className={`w-full text-left px-3 py-2 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 ${key === status ? 'bg-gray-50 dark:bg-gray-700' : ''}`}
+              className={`w-full text-left px-3 py-2 ${cfg.textColor} hover:bg-warm-gray/50 flex items-center gap-2 uppercase tracking-wide text-xs font-body border-l-[3px] ${cfg.borderColor} ${key === status ? 'bg-warm-gray/30' : ''}`}
             >
-              <cfg.icon size={14} />
               {cfg.label}
             </button>
           ))}
@@ -138,41 +233,63 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
     }
   };
 
+  // Format date for display
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
   return (
-    <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border overflow-hidden transition-colors ${
-      isSelected ? 'border-blue-500 ring-2 ring-blue-200 dark:border-blue-400 dark:ring-blue-800' : 'border-gray-200 dark:border-gray-700'
+    <div className={`bg-parchment border border-warm-gray overflow-hidden transition-all hover:border-copper hover:shadow-[0_2px_8px_rgba(43,43,61,0.08)] hover:-translate-y-px ${
+      isSelected ? 'border-copper ring-1 ring-copper/20' : ''
     }`}>
       <div className="p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex-shrink-0">
-                Discovered
-              </span>
-              <ScoreBadge score={job.score} />
-              <h3 className="font-semibold text-gray-900 dark:text-white truncate">{job.title}</h3>
-            </div>
-            <p className="text-gray-600 dark:text-gray-300 text-sm">{job.company || 'Unknown Company'}</p>
-            <p className="text-gray-500 dark:text-gray-400 text-xs">{job.location || 'Location not specified'}</p>
+        <div className="flex items-center gap-4">
+          {/* Company logo placeholder */}
+          <div
+            className="w-10 h-10 rounded-sm flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: getCompanyColor(job.company) }}
+          >
+            <span className="text-parchment font-body font-semibold text-sm">
+              {getCompanyInitials(job.company)}
+            </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Main info */}
+          <div className="flex-1 min-w-0">
+            <h3 className="font-body font-semibold text-ink truncate">{job.title}</h3>
+            <p className="text-slate text-sm">{job.company || 'Unknown Company'}</p>
+            <p className="text-slate text-xs">{job.location || 'Location not specified'}</p>
+          </div>
+
+          {/* Score */}
+          <div className="flex-shrink-0">
+            <ScoreBadge score={job.score} />
+          </div>
+
+          {/* Status */}
+          <div className="flex-shrink-0">
             <StatusBadge status={job.status} onChange={(s) => onStatusChange(job.job_id, s)} />
-            <span className="text-xs text-gray-400 dark:text-gray-500 capitalize">{job.source}</span>
+          </div>
+
+          {/* Date */}
+          <div className="flex-shrink-0 text-xs text-slate w-16 text-right">
+            {formatDate(job.created_at)}
           </div>
         </div>
 
         {analysis.recommendation && (
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 line-clamp-2">{analysis.recommendation}</p>
+          <p className="mt-2 text-sm text-slate line-clamp-2 pl-14">{analysis.recommendation}</p>
         )}
       </div>
 
       {expanded && (
-        <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-900/50 space-y-3">
+        <div className="border-t border-warm-gray px-4 py-3 bg-warm-gray/30 space-y-3">
           {analysis.strengths?.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-cyan-700 dark:text-cyan-400 uppercase mb-1">Strengths</h4>
-              <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+              <h4 className="text-xs font-semibold text-patina uppercase mb-1 tracking-wide">Strengths</h4>
+              <ul className="text-sm text-ink space-y-1">
                 {analysis.strengths.map((s, i) => <li key={i}>• {s}</li>)}
               </ul>
             </div>
@@ -180,8 +297,8 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
 
           {analysis.gaps?.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase mb-1">Gaps</h4>
-              <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+              <h4 className="text-xs font-semibold text-rust uppercase mb-1 tracking-wide">Gaps</h4>
+              <ul className="text-sm text-ink space-y-1">
                 {analysis.gaps.map((g, i) => <li key={i}>• {g}</li>)}
               </ul>
             </div>
@@ -189,8 +306,8 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
 
           {job.cover_letter && (
             <div>
-              <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase mb-1">Cover Letter</h4>
-              <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto">
+              <h4 className="text-xs font-semibold text-ink uppercase mb-1 tracking-wide">Cover Letter</h4>
+              <pre className="text-sm text-ink whitespace-pre-wrap bg-parchment p-3 border border-warm-gray max-h-48 overflow-y-auto font-body">
                 {job.cover_letter}
               </pre>
             </div>
@@ -199,14 +316,14 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
           {/* Job Description Section */}
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">
+              <h4 className="text-xs font-semibold text-ink uppercase tracking-wide">
                 Job Description
               </h4>
               {descriptionSaveStatus && (
-                <span className="text-xs text-gray-500">
-                  {descriptionSaveStatus === 'saving' && '💾 Saving...'}
-                  {descriptionSaveStatus === 'rescoring' && '🤖 Rescoring...'}
-                  {descriptionSaveStatus === 'saved' && '✓ Saved & Rescored'}
+                <span className="text-xs text-slate">
+                  {descriptionSaveStatus === 'saving' && 'Saving...'}
+                  {descriptionSaveStatus === 'rescoring' && 'Rescoring...'}
+                  {descriptionSaveStatus === 'saved' && 'Saved & Rescored'}
                 </span>
               )}
             </div>
@@ -215,24 +332,21 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
               onChange={handleJobDescriptionChange}
               onBlur={handleJobDescriptionSave}
               placeholder="Paste the full job description here for better AI analysis..."
-              className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg
-                         text-sm bg-white dark:bg-gray-800 dark:text-gray-100
-                         focus:ring-2 focus:ring-cyan-500 focus:border-transparent
-                         min-h-[200px] resize-y"
+              className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-sm text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors min-h-[200px] resize-y outline-none"
               rows={10}
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              💡 Adding the full job description will automatically rescore the job with better accuracy
+            <p className="text-xs text-slate mt-1">
+              Adding the full job description will automatically rescore the job with better accuracy
             </p>
           </div>
 
           {/* Notes Section */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">Notes</h4>
+              <h4 className="text-xs font-semibold text-ink uppercase tracking-wide">Notes</h4>
               {saveStatus && (
-                <span className={`text-xs ${saveStatus === 'saving' ? 'text-blue-600 dark:text-blue-400' : 'text-cyan-600 dark:text-cyan-400'}`}>
-                  {saveStatus === 'saving' ? 'Saving...' : '✓ Saved'}
+                <span className={`text-xs ${saveStatus === 'saving' ? 'text-slate' : 'text-patina'}`}>
+                  {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
                 </span>
               )}
             </div>
@@ -241,7 +355,7 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
               onChange={handleNotesChange}
               onBlur={handleNotesSave}
               placeholder="Add notes, interview dates, key takeaways..."
-              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 text-sm border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors resize-none outline-none"
               rows="3"
             />
           </div>
@@ -252,7 +366,7 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
                 e.stopPropagation();
                 window.open(job.url, '_blank', 'width=1200,height=800,left=100,top=100');
               }}
-              className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+              className="flex items-center gap-1 px-3 py-1.5 bg-copper text-parchment rounded-none text-sm font-body uppercase tracking-wide hover:bg-copper/90 active:translate-y-px transition-all"
             >
               <ExternalLink size={14} /> <span className="hidden sm:inline">View Job</span><span className="sm:hidden">View</span>
             </button>
@@ -260,7 +374,7 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
             {!job.cover_letter && (
               <button
                 onClick={(e) => { e.stopPropagation(); onGenerateCoverLetter(job.job_id); }}
-                className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded text-sm hover:bg-purple-700"
+                className="flex items-center gap-1 px-3 py-1.5 bg-transparent border border-copper text-copper rounded-none text-sm font-body uppercase tracking-wide hover:bg-copper/10 transition-all"
               >
                 <FileText size={14} /> <span className="hidden sm:inline">Generate Cover Letter</span><span className="sm:hidden">Cover</span>
               </button>
@@ -268,13 +382,13 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
 
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(job.job_id); }}
-              className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 sm:ml-auto"
+              className="flex items-center gap-1 px-3 py-1.5 bg-rust text-parchment rounded-none text-sm font-body uppercase tracking-wide hover:bg-rust/90 active:translate-y-px transition-all sm:ml-auto"
             >
               <Trash2 size={14} /> Delete
             </button>
           </div>
 
-          <div className="text-xs text-gray-400 dark:text-gray-500">
+          <div className="text-xs text-slate">
             Added: {new Date(job.created_at).toLocaleDateString()} •
             Resume: {analysis.resume_to_use || 'fullstack'}
           </div>
@@ -288,15 +402,15 @@ function StatsBar({ stats }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
       {[
-        { label: 'Total', value: stats.total, color: 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700', textColor: 'text-gray-900 dark:text-white' },
-        { label: 'New', value: stats.new, color: 'bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 border border-gray-200 dark:border-gray-600', textColor: 'text-gray-900 dark:text-white' },
-        { label: 'Interested', value: stats.interested, color: 'bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 border border-blue-200 dark:border-blue-700', textColor: 'text-blue-900 dark:text-blue-300' },
-        { label: 'Applied', value: stats.applied, color: 'bg-gradient-to-br from-cyan-50 to-cyan-100 dark:from-cyan-900/30 dark:to-cyan-800/30 border border-cyan-200 dark:border-cyan-700', textColor: 'text-cyan-900 dark:text-cyan-300' },
-        { label: 'Avg Score', value: Math.round(stats.avg_score), color: 'bg-gradient-to-br from-pink-100 to-pink-200 dark:from-pink-900/30 dark:to-pink-800/30 border border-pink-300 dark:border-pink-700', textColor: 'text-pink-900 dark:text-pink-300' },
-      ].map(({ label, value, color, textColor }) => (
-        <div key={label} className={`${color} rounded-lg p-3 sm:p-4 text-center shadow-sm hover:shadow-md transition-shadow`}>
-          <div className={`text-2xl sm:text-3xl font-bold ${textColor}`}>{value}</div>
-          <div className="text-xs text-gray-600 dark:text-gray-400 font-medium mt-1">{label}</div>
+        { label: 'Total', value: stats.total, borderColor: 'border-l-slate' },
+        { label: 'New', value: stats.new, borderColor: 'border-l-slate' },
+        { label: 'Interested', value: stats.interested, borderColor: 'border-l-copper' },
+        { label: 'Applied', value: stats.applied, borderColor: 'border-l-cream' },
+        { label: 'Avg Score', value: Math.round(stats.avg_score), borderColor: 'border-l-patina' },
+      ].map(({ label, value, borderColor }) => (
+        <div key={label} className={`bg-parchment border border-warm-gray border-l-[3px] ${borderColor} p-3 sm:p-4 text-center hover:border-copper transition-colors`}>
+          <div className="text-2xl sm:text-3xl font-mono font-bold text-ink">{value}</div>
+          <div className="text-xs text-slate font-body uppercase tracking-wide mt-1">{label}</div>
         </div>
       ))}
     </div>
@@ -314,47 +428,47 @@ function ResumeCard({ resume, onEdit, onDelete, onResearch, expanded, onToggle }
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div className="bg-parchment border border-warm-gray overflow-hidden hover:border-copper transition-all">
       <div
-        className="p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+        className="p-4 cursor-pointer hover:bg-warm-gray/30 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">{resume.name}</h3>
+            <h3 className="font-body font-semibold text-ink mb-1">{resume.name}</h3>
             {resume.focus_areas && (
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-1">
+              <p className="text-sm text-slate mb-1">
                 <span className="font-medium">Focus:</span> {resume.focus_areas}
               </p>
             )}
             {resume.target_roles && (
-              <p className="text-sm text-gray-600 dark:text-gray-300">
+              <p className="text-sm text-slate">
                 <span className="font-medium">Target Roles:</span> {resume.target_roles}
               </p>
             )}
           </div>
           <div className="flex flex-col items-end gap-2">
-            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+            <span className="px-2 py-1 border-l-[3px] border-l-copper bg-warm-gray/30 text-xs font-body uppercase tracking-wide text-copper">
               Used {resume.usage_count || 0}x
             </span>
             <div className="flex gap-1">
               <button
                 onClick={handleResearch}
                 disabled={researching}
-                className="p-1.5 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded disabled:opacity-50"
+                className="p-1.5 text-copper hover:bg-copper/10 transition-colors disabled:opacity-50"
                 title="Find jobs for this resume"
               >
                 {researching ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onEdit(resume); }}
-                className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
+                className="p-1.5 text-slate hover:bg-warm-gray/50 transition-colors"
               >
                 <Edit2 size={16} />
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onDelete(resume.resume_id); }}
-                className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                className="p-1.5 text-rust hover:bg-rust/10 transition-colors"
               >
                 <Trash2 size={16} />
               </button>
@@ -364,12 +478,12 @@ function ResumeCard({ resume, onEdit, onDelete, onResearch, expanded, onToggle }
       </div>
 
       {expanded && (
-        <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-900/50 space-y-2">
-          <div className="text-xs text-gray-500 dark:text-gray-400">
+        <div className="border-t border-warm-gray px-4 py-3 bg-warm-gray/30 space-y-2">
+          <div className="text-xs text-slate">
             Created: {new Date(resume.created_at).toLocaleDateString()}
           </div>
           <div className="max-h-40 overflow-y-auto">
-            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
+            <p className="text-sm text-ink whitespace-pre-wrap font-mono bg-parchment p-2 border border-warm-gray">
               {resume.content?.substring(0, 500)}...
             </p>
           </div>
@@ -480,54 +594,54 @@ function ResumeUploadModal({ onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-parchment border border-warm-gray shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Add New Resume</h2>
+          <h2 className="font-display text-2xl text-ink mb-4">Add New Resume</h2>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2">
-              <AlertCircle size={20} className="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            <div className="mb-4 p-3 bg-rust/10 border-l-[3px] border-l-rust flex items-start gap-2">
+              <AlertCircle size={20} className="text-rust flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-rust font-body">{error}</p>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Upload Mode Toggle */}
-            <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-700 rounded-lg">
+            <div className="flex gap-2 p-1 bg-warm-gray">
               <button
                 type="button"
                 onClick={() => setUploadMode('file')}
-                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition ${
+                className={`flex-1 px-4 py-2 text-sm font-body uppercase tracking-wide transition ${
                   uploadMode === 'file'
-                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                    ? 'bg-parchment text-ink border-l-[3px] border-l-copper'
+                    : 'text-slate hover:text-ink'
                 }`}
               >
-                📎 Upload File
+                Upload File
               </button>
               <button
                 type="button"
                 onClick={() => setUploadMode('paste')}
-                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition ${
+                className={`flex-1 px-4 py-2 text-sm font-body uppercase tracking-wide transition ${
                   uploadMode === 'paste'
-                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
-                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                    ? 'bg-parchment text-ink border-l-[3px] border-l-copper'
+                    : 'text-slate hover:text-ink'
                 }`}
               >
-                📝 Paste Text
+                Paste Text
               </button>
             </div>
 
             {/* File Upload Mode */}
             {uploadMode === 'file' && (
-              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center bg-gray-50 dark:bg-gray-700/50">
-                <Upload size={40} className="mx-auto mb-3 text-gray-400 dark:text-gray-500" />
+              <div className="border-2 border-dashed border-warm-gray p-6 text-center bg-warm-gray/30">
+                <Upload size={40} className="mx-auto mb-3 text-slate" />
                 <label className="cursor-pointer">
-                  <span className="text-sm text-gray-600 dark:text-gray-300">
+                  <span className="text-sm text-slate font-body">
                     {selectedFile ? (
-                      <span className="text-teal-600 dark:text-teal-400 font-medium">
-                        ✓ {selectedFile.name}
+                      <span className="text-patina font-medium">
+                        {selectedFile.name}
                       </span>
                     ) : (
                       <>
@@ -548,7 +662,7 @@ function ResumeUploadModal({ onClose, onSave }) {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-body font-medium text-ink mb-1">
                 Resume Name *
               </label>
               <input
@@ -556,13 +670,13 @@ function ResumeUploadModal({ onClose, onSave }) {
                 placeholder="e.g., Backend Python AWS"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-body font-medium text-ink mb-1">
                 Focus Areas
               </label>
               <input
@@ -570,12 +684,12 @@ function ResumeUploadModal({ onClose, onSave }) {
                 placeholder="e.g., Python, AWS, FastAPI, PostgreSQL"
                 value={formData.focus_areas}
                 onChange={(e) => setFormData({ ...formData, focus_areas: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-body font-medium text-ink mb-1">
                 Target Roles
               </label>
               <input
@@ -583,21 +697,21 @@ function ResumeUploadModal({ onClose, onSave }) {
                 placeholder="e.g., Backend Engineer, API Developer"
                 value={formData.target_roles}
                 onChange={(e) => setFormData({ ...formData, target_roles: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
               />
             </div>
 
             {/* Paste Mode */}
             {uploadMode === 'paste' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-sm font-body font-medium text-ink mb-1">
                   Resume Content *
                 </label>
                 <textarea
                   placeholder="Paste your resume text here..."
                   value={formData.content}
                   onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 font-mono text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-mono text-sm placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none resize-y"
                   rows={12}
                   required={uploadMode === 'paste'}
                 />
@@ -608,7 +722,7 @@ function ResumeUploadModal({ onClose, onSave }) {
               <button
                 type="submit"
                 disabled={saving}
-                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition"
+                className="flex-1 px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px disabled:opacity-50 transition-all"
               >
                 {saving ? 'Saving...' : 'Save Resume'}
               </button>
@@ -616,7 +730,7 @@ function ResumeUploadModal({ onClose, onSave }) {
                 type="button"
                 onClick={onClose}
                 disabled={saving}
-                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition"
+                className="px-4 py-2 bg-transparent border border-warm-gray text-slate rounded-none uppercase tracking-wide text-sm font-body hover:bg-warm-gray/50 disabled:opacity-50 transition-all"
               >
                 Cancel
               </button>
@@ -639,29 +753,29 @@ function ExternalApplicationCard({ app, onStatusChange, expanded, onToggle, onDe
   };
 
   const EXTERNAL_STATUS_CONFIG = {
-    applied: { label: 'Applied', color: 'bg-cyan-100 text-cyan-700', icon: CheckCircle },
-    interviewing: { label: 'Interviewing', color: 'bg-purple-100 text-purple-700', icon: Briefcase },
-    rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700', icon: XCircle },
-    offer: { label: 'Offer', color: 'bg-yellow-100 text-yellow-700', icon: Star },
-    withdrawn: { label: 'Withdrawn', color: 'bg-gray-100 text-gray-500', icon: XCircle },
+    applied: { label: 'Applied', borderColor: 'border-l-cream', textColor: 'text-ink', icon: CheckCircle },
+    interviewing: { label: 'Interviewing', borderColor: 'border-l-patina', textColor: 'text-patina', icon: Briefcase },
+    rejected: { label: 'Rejected', borderColor: 'border-l-rust', textColor: 'text-rust', icon: XCircle },
+    offer: { label: 'Offer', borderColor: 'border-l-copper', textColor: 'text-copper', icon: Star },
+    withdrawn: { label: 'Withdrawn', borderColor: 'border-l-slate', textColor: 'text-slate', icon: XCircle },
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div className="bg-parchment border border-warm-gray overflow-hidden hover:border-copper transition-all">
       <div
-        className="p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+        className="p-4 cursor-pointer hover:bg-warm-gray/30 transition-colors"
         onClick={onToggle}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 flex-shrink-0">
+              <span className="px-2 py-0.5 text-xs border-l-[3px] border-l-patina bg-patina/10 text-patina font-body uppercase tracking-wide flex-shrink-0">
                 Manual
               </span>
-              <h3 className="font-semibold text-gray-900 dark:text-white truncate">{app.title}</h3>
+              <h3 className="font-body font-semibold text-ink truncate">{app.title}</h3>
             </div>
-            <p className="text-gray-600 dark:text-gray-300 text-sm">{app.company}</p>
-            <p className="text-gray-500 dark:text-gray-400 text-xs">{app.location || 'Location not specified'}</p>
+            <p className="text-slate text-sm">{app.company}</p>
+            <p className="text-slate text-xs">{app.location || 'Location not specified'}</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -670,33 +784,33 @@ function ExternalApplicationCard({ app, onStatusChange, expanded, onToggle, onDe
               onChange={(s) => onStatusChange(app.app_id, s)}
               statusConfig={EXTERNAL_STATUS_CONFIG}
             />
-            <span className="text-xs text-gray-400 dark:text-gray-500">{sourceLabels[app.source] || app.source}</span>
+            <span className="text-xs text-slate">{sourceLabels[app.source] || app.source}</span>
           </div>
         </div>
       </div>
 
       {expanded && (
-        <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-900/50 space-y-3">
+        <div className="border-t border-warm-gray px-4 py-3 bg-warm-gray/30 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div>
-              <span className="text-gray-500 dark:text-gray-400">Applied:</span>
-              <span className="ml-2 font-medium text-gray-900 dark:text-gray-100">{new Date(app.applied_date).toLocaleDateString()}</span>
+              <span className="text-slate">Applied:</span>
+              <span className="ml-2 font-medium text-ink">{new Date(app.applied_date).toLocaleDateString()}</span>
             </div>
             {app.application_method && (
               <div>
-                <span className="text-gray-500 dark:text-gray-400">Method:</span>
-                <span className="ml-2 font-medium text-gray-900 dark:text-gray-100 capitalize">{app.application_method.replace('_', ' ')}</span>
+                <span className="text-slate">Method:</span>
+                <span className="ml-2 font-medium text-ink capitalize">{app.application_method.replace('_', ' ')}</span>
               </div>
             )}
             {app.contact_name && (
-              <div className="text-gray-900 dark:text-gray-100">
-                <User size={14} className="inline mr-1 text-gray-500 dark:text-gray-400" />
+              <div className="text-ink">
+                <User size={14} className="inline mr-1 text-slate" />
                 <span className="font-medium">{app.contact_name}</span>
               </div>
             )}
             {app.contact_email && (
-              <div className="text-gray-900 dark:text-gray-100">
-                <Mail size={14} className="inline mr-1 text-gray-500 dark:text-gray-400" />
+              <div className="text-ink">
+                <Mail size={14} className="inline mr-1 text-slate" />
                 <span className="font-medium">{app.contact_email}</span>
               </div>
             )}
@@ -704,8 +818,8 @@ function ExternalApplicationCard({ app, onStatusChange, expanded, onToggle, onDe
 
           {app.notes && (
             <div>
-              <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase mb-1">Notes</h4>
-              <p className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700">{app.notes}</p>
+              <h4 className="text-xs font-semibold text-ink uppercase tracking-wide mb-1">Notes</h4>
+              <p className="text-sm text-ink bg-parchment p-3 border border-warm-gray">{app.notes}</p>
             </div>
           )}
 
@@ -715,14 +829,14 @@ function ExternalApplicationCard({ app, onStatusChange, expanded, onToggle, onDe
                 href={app.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                className="flex items-center gap-1 px-3 py-1.5 bg-copper text-parchment rounded-none text-sm font-body uppercase tracking-wide hover:bg-copper/90 transition-all"
               >
                 <ExternalLink size={14} /> View Job
               </a>
             )}
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(app.app_id); }}
-              className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+              className="flex items-center gap-1 px-3 py-1.5 bg-rust text-parchment rounded-none text-sm font-body uppercase tracking-wide hover:bg-rust/90 transition-all"
             >
               Delete
             </button>
@@ -767,6 +881,7 @@ export default function App() {
   const [selectedJobIndex, setSelectedJobIndex] = useState(0);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [toasts, setToasts] = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Update HTML element and localStorage when dark mode changes
   useEffect(() => {
@@ -1315,120 +1430,79 @@ export default function App() {
     });
   }, [jobs, externalApps]);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-pink-50 dark:from-gray-900 dark:to-gray-800 transition-colors duration-200">
-      <header className="bg-white dark:bg-gray-800 shadow-md border-b border-pink-100 dark:border-gray-700 transition-colors duration-200">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            {/* Logo and title - full width on mobile */}
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              {/* Logo placeholder - add your logo here */}
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-pink-400 to-pink-500 flex items-center justify-center shadow-lg flex-shrink-0">
-                <span className="text-xl sm:text-2xl">🐷</span>
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-gray-800 to-pink-600 dark:from-pink-400 dark:to-purple-400 bg-clip-text text-transparent truncate">
-                  Hammy the Hire Tracker
-                </h1>
-                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">AI-powered job matching</p>
-              </div>
-            </div>
+  // Counts for sidebar
+  const sidebarCounts = {
+    jobs: allApplications.length,
+    resumes: resumes.length,
+    companies: trackedCompanies.length,
+  };
 
-            {/* Actions - wrap on mobile */}
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+  return (
+    <div className="min-h-screen flex">
+      {/* Sidebar */}
+      <Sidebar
+        activeView={activeView}
+        setActiveView={setActiveView}
+        counts={sidebarCounts}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+      />
+
+      {/* Main content area */}
+      <div className="flex-1 min-w-0 lg:ml-0">
+        {/* Top header with mobile menu button and actions */}
+        <header className="bg-parchment border-b border-warm-gray px-4 sm:px-6 py-4">
+          <div className="flex items-center justify-between gap-4">
+            {/* Mobile menu button */}
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden p-2 text-ink hover:text-copper transition-colors"
+            >
+              <Menu size={24} />
+            </button>
+
+            {/* Page title */}
+            <h2 className="font-display text-xl text-ink hidden sm:block">
+              {activeView === 'all_applications' && 'Jobs'}
+              {activeView === 'followups' && 'Follow-ups'}
+              {activeView === 'resumes' && 'Resume Library'}
+              {activeView === 'companies' && 'Tracked Companies'}
+              {activeView === 'settings' && 'Settings'}
+            </h2>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 ml-auto">
               <button
                 onClick={handleResearchJobs}
                 disabled={researching}
-                className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm sm:text-base"
+                className="flex items-center gap-2 px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px disabled:opacity-50 transition-all"
               >
                 <Sparkles size={16} className={researching ? 'animate-pulse' : ''} />
-                <span className="hidden lg:inline">{researching ? 'Researching...' : 'Research Jobs'}</span>
-                <span className="lg:hidden">{researching ? 'Research...' : 'Research'}</span>
+                <span className="hidden lg:inline">{researching ? 'Researching...' : 'Research'}</span>
               </button>
 
               <button
                 onClick={handleScan}
                 disabled={scanning}
-                className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm sm:text-base"
+                className="flex items-center gap-2 px-4 py-2 bg-transparent border border-copper text-copper rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/10 disabled:opacity-50 transition-all"
               >
                 <RefreshCw size={16} className={scanning ? 'animate-spin' : ''} />
-                <span className="hidden md:inline">{scanning ? 'Scanning...' : 'Scan Emails'}</span>
-                <span className="md:hidden">Scan</span>
+                <span className="hidden md:inline">{scanning ? 'Scanning...' : 'Scan'}</span>
               </button>
 
               <button
                 onClick={handleScoreJobs}
                 disabled={scoring}
-                className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-pink-300 to-pink-400 text-pink-900 rounded-lg hover:from-pink-400 hover:to-pink-500 shadow-md hover:shadow-lg transition-all disabled:opacity-50 border-2 border-pink-400 text-sm sm:text-base"
+                className="flex items-center gap-2 px-4 py-2 bg-transparent border border-copper text-copper rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/10 disabled:opacity-50 transition-all"
               >
                 <Star size={16} className={scoring ? 'animate-spin' : ''} />
-                <span className="hidden md:inline">{scoring ? 'Scoring...' : 'Score Jobs'}</span>
-                <span className="md:hidden">Score</span>
+                <span className="hidden md:inline">{scoring ? 'Scoring...' : 'Score'}</span>
               </button>
             </div>
           </div>
-        </div>
-      </header>
-      
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        {/* View Tabs */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          <button
-            onClick={() => setActiveView('all_applications')}
-            className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition shadow-sm text-sm sm:text-base ${
-              activeView === 'all_applications'
-                ? 'bg-gradient-to-r from-pink-300 to-pink-400 text-pink-900 shadow-md border-2 border-pink-400'
-                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-pink-50 dark:hover:bg-gray-700 border-2 border-pink-100 dark:border-gray-600'
-            }`}
-          >
-            <Briefcase size={18} className="inline mr-1 sm:mr-2" />
-            <span className="hidden sm:inline">All Applications ({allApplications.length})</span>
-            <span className="sm:hidden">All ({allApplications.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveView('resumes')}
-            className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition shadow-sm text-sm sm:text-base ${
-              activeView === 'resumes'
-                ? 'bg-gradient-to-r from-purple-200 to-purple-300 text-purple-900 shadow-md border-2 border-purple-400'
-                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-purple-50 dark:hover:bg-gray-700 border-2 border-purple-100 dark:border-gray-600'
-            }`}
-          >
-            <span className="hidden sm:inline">📄 Resume Library ({resumes.length})</span>
-            <span className="sm:hidden">📄 ({resumes.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveView('companies')}
-            className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition shadow-sm text-sm sm:text-base ${
-              activeView === 'companies'
-                ? 'bg-gradient-to-r from-amber-200 to-amber-300 text-amber-900 shadow-md border-2 border-amber-400'
-                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-amber-50 dark:hover:bg-gray-700 border-2 border-amber-100 dark:border-gray-600'
-            }`}
-          >
-            <span className="hidden sm:inline">🏢 Tracked Companies ({trackedCompanies.length})</span>
-            <span className="sm:hidden">🏢 ({trackedCompanies.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveView('roadmap')}
-            className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition shadow-sm text-sm sm:text-base ${
-              activeView === 'roadmap'
-                ? 'bg-gradient-to-r from-blue-200 to-blue-300 text-blue-900 shadow-md border-2 border-blue-400'
-                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-gray-700 border-2 border-blue-100 dark:border-gray-600'
-            }`}
-          >
-            🗺️ <span className="hidden sm:inline">Roadmap</span>
-          </button>
-          <button
-            onClick={() => setActiveView('settings')}
-            className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition shadow-sm text-sm sm:text-base ${
-              activeView === 'settings'
-                ? 'bg-gradient-to-r from-gray-200 to-gray-300 text-gray-900 shadow-md border-2 border-gray-400'
-                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border-2 border-gray-100 dark:border-gray-600'
-            }`}
-          >
-            ⚙️ <span className="hidden sm:inline">Settings</span>
-          </button>
-        </div>
+        </header>
 
+        <main className="px-4 sm:px-6 py-6">
         {activeView === 'all_applications' ? (
           <>
             <StatsBar stats={stats} />
@@ -1576,10 +1650,10 @@ export default function App() {
           <>
             {/* Resumes View */}
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Resume Library</h2>
+              <h2 className="font-display text-xl text-ink">Resume Library</h2>
               <button
                 onClick={() => setShowResumeModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                className="flex items-center gap-2 px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px transition-all"
               >
                 <Plus size={18} />
                 Add Resume
@@ -1588,12 +1662,12 @@ export default function App() {
 
             {resumes.length === 0 ? (
               <div className="text-center py-12">
-                <FileText size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-                <p className="text-gray-500 dark:text-gray-400 mb-4">No resumes in your library yet.</p>
-                <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">Add your first resume to get AI-powered job-resume matching!</p>
+                <FileText size={48} className="mx-auto mb-4 text-slate" />
+                <p className="text-slate mb-4">No resumes in your library yet.</p>
+                <p className="text-sm text-slate mb-6">Add your first resume to get AI-powered job-resume matching!</p>
                 <button
                   onClick={() => setShowResumeModal(true)}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px transition-all"
                 >
                   <Upload size={20} />
                   Upload Your First Resume
@@ -1601,24 +1675,24 @@ export default function App() {
               </div>
             ) : (
               <>
-                <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                  <h3 className="font-semibold text-purple-900 mb-2">📊 Library Stats</h3>
+                <div className="mb-4 p-4 bg-warm-gray/50 border border-warm-gray border-l-[3px] border-l-copper">
+                  <h3 className="font-body font-semibold text-ink mb-2">Library Stats</h3>
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
-                      <div className="text-2xl font-bold text-purple-600">{resumes.length}</div>
-                      <div className="text-purple-700">Total Resumes</div>
+                      <div className="text-2xl font-mono font-bold text-ink">{resumes.length}</div>
+                      <div className="text-slate text-xs uppercase tracking-wide">Total Resumes</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold text-purple-600">
+                      <div className="text-2xl font-mono font-bold text-ink">
                         {resumes.reduce((sum, r) => sum + (r.usage_count || 0), 0)}
                       </div>
-                      <div className="text-purple-700">Total Recommendations</div>
+                      <div className="text-slate text-xs uppercase tracking-wide">Total Recommendations</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold text-purple-600">
+                      <div className="text-2xl font-mono font-bold text-ink">
                         {resumes.filter(r => r.usage_count > 0).length}
                       </div>
-                      <div className="text-purple-700">Used Resumes</div>
+                      <div className="text-slate text-xs uppercase tracking-wide">Used Resumes</div>
                     </div>
                   </div>
                 </div>
@@ -1639,14 +1713,25 @@ export default function App() {
               </>
             )}
           </>
+        ) : activeView === 'followups' ? (
+          <>
+            {/* Follow-ups View - Placeholder */}
+            <div className="bg-warm-gray/50 border border-warm-gray rounded-sm p-8 text-center">
+              <Mail size={48} className="mx-auto mb-4 text-slate" />
+              <h3 className="font-display text-xl text-ink mb-2">Follow-ups Coming Soon</h3>
+              <p className="font-body text-slate">
+                Track interview responses, offer letters, and other follow-up emails in one place.
+              </p>
+            </div>
+          </>
         ) : activeView === 'companies' ? (
           <>
             {/* Tracked Companies View */}
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Tracked Companies</h2>
+              <h2 className="font-display text-xl text-ink">Tracked Companies</h2>
               <button
                 onClick={() => setShowAddCompany(!showAddCompany)}
-                className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+                className="flex items-center gap-2 px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px transition-all"
               >
                 <Plus size={18} />
                 {showAddCompany ? 'Cancel' : 'Add Company'}
@@ -1654,8 +1739,8 @@ export default function App() {
             </div>
 
             {showAddCompany && (
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Add Tracked Company</h3>
+              <div className="bg-parchment border border-warm-gray p-6 mb-6">
+                <h3 className="font-body font-semibold text-ink mb-4">Add Tracked Company</h3>
                 <form onSubmit={(e) => {
                   e.preventDefault();
                   const formData = new FormData(e.target);
@@ -1669,61 +1754,61 @@ export default function App() {
                 }}>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Company Name <span className="text-red-500">*</span>
+                      <label className="block text-sm font-body font-medium text-ink mb-1">
+                        Company Name <span className="text-rust">*</span>
                       </label>
                       <input
                         type="text"
                         name="company_name"
                         required
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                         placeholder="e.g., Google, Microsoft, Startup Inc."
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label className="block text-sm font-body font-medium text-ink mb-1">
                         Career Page URL
                       </label>
                       <input
                         type="url"
                         name="career_page_url"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                         placeholder="https://company.com/careers"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label className="block text-sm font-body font-medium text-ink mb-1">
                         Job Alert Email
                       </label>
                       <input
                         type="email"
                         name="job_alert_email"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                         placeholder="jobs@company.com"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label className="block text-sm font-body font-medium text-ink mb-1">
                         Notes
                       </label>
                       <textarea
                         name="notes"
                         rows="3"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none resize-y"
                         placeholder="Add any notes about this company..."
                       />
                     </div>
                     <div className="flex gap-2">
                       <button
                         type="submit"
-                        className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+                        className="px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px transition-all"
                       >
                         Add Company
                       </button>
                       <button
                         type="button"
                         onClick={() => setShowAddCompany(false)}
-                        className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                        className="px-4 py-2 bg-transparent border border-warm-gray text-slate rounded-none uppercase tracking-wide text-sm font-body hover:bg-warm-gray/50 transition-all"
                       >
                         Cancel
                       </button>
@@ -1735,14 +1820,14 @@ export default function App() {
 
             {trackedCompanies.length === 0 ? (
               <div className="text-center py-12">
-                <Briefcase size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
-                <p className="text-gray-500 dark:text-gray-400 mb-4">No tracked companies yet.</p>
-                <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
+                <Briefcase size={48} className="mx-auto mb-4 text-slate" />
+                <p className="text-slate mb-4">No tracked companies yet.</p>
+                <p className="text-sm text-slate mb-6">
                   Track companies you're interested in with their career pages and job alert emails.
                 </p>
                 <button
                   onClick={() => setShowAddCompany(true)}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px transition-all"
                 >
                   <Plus size={20} />
                   Add Your First Company
@@ -1751,7 +1836,7 @@ export default function App() {
             ) : (
               <div className="space-y-3">
                 {trackedCompanies.map(company => (
-                  <div key={company.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+                  <div key={company.id} className="bg-parchment border border-warm-gray p-4 hover:border-copper transition-colors">
                     {editingCompany === company.id ? (
                       <form onSubmit={(e) => {
                         e.preventDefault();
@@ -1769,41 +1854,41 @@ export default function App() {
                             name="company_name"
                             defaultValue={company.company_name}
                             required
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-semibold focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body font-semibold placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                             placeholder="Company Name"
                           />
                           <input
                             type="url"
                             name="career_page_url"
                             defaultValue={company.career_page_url || ''}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body text-sm placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                             placeholder="Career Page URL"
                           />
                           <input
                             type="email"
                             name="job_alert_email"
                             defaultValue={company.job_alert_email || ''}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body text-sm placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                             placeholder="Job Alert Email"
                           />
                           <textarea
                             name="notes"
                             defaultValue={company.notes || ''}
                             rows="2"
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body text-sm placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none resize-y"
                             placeholder="Notes"
                           />
                           <div className="flex gap-2">
                             <button
                               type="submit"
-                              className="px-3 py-1.5 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700"
+                              className="px-3 py-1.5 bg-copper text-parchment text-sm rounded-none uppercase tracking-wide font-body hover:bg-copper/90 transition-all"
                             >
                               Save
                             </button>
                             <button
                               type="button"
                               onClick={() => setEditingCompany(null)}
-                              className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                              className="px-3 py-1.5 bg-transparent border border-warm-gray text-slate text-sm rounded-none uppercase tracking-wide font-body hover:bg-warm-gray/50 transition-all"
                             >
                               Cancel
                             </button>
@@ -1814,8 +1899,8 @@ export default function App() {
                       <>
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 dark:text-white text-lg mb-2">{company.company_name}</h3>
-                            <div className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                            <h3 className="font-body font-semibold text-ink text-lg mb-2">{company.company_name}</h3>
+                            <div className="space-y-1 text-sm text-slate">
                               {company.career_page_url && (
                                 <div className="flex items-center gap-2">
                                   <ExternalLink size={14} />
@@ -1823,7 +1908,7 @@ export default function App() {
                                     href={company.career_page_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-blue-600 dark:text-blue-400 hover:underline"
+                                    className="text-copper hover:underline"
                                   >
                                     {company.career_page_url}
                                   </a>
@@ -2113,7 +2198,7 @@ export default function App() {
                   href="https://github.com/creavill/Henry-the-Hire-Tracker/blob/main/ROADMAP.md"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 transition-all"
                 >
                   <ExternalLink size={16} />
                   View ROADMAP.md on GitHub
@@ -2121,27 +2206,27 @@ export default function App() {
               </div>
 
               {/* Current Sprint */}
-              <div className="bg-gradient-to-r from-pink-50 to-pink-100 rounded-lg p-6 border border-pink-200">
-                <h3 className="font-bold text-pink-900 mb-3">🚀 Current Sprint (This Week)</h3>
+              <div className="bg-warm-gray/50 border border-warm-gray border-l-[3px] border-l-copper p-6">
+                <h3 className="font-body font-bold text-ink mb-3">Current Sprint (This Week)</h3>
                 <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2 text-pink-800">
-                    <CheckCircle size={16} className="text-teal-600" />
+                  <div className="flex items-center gap-2 text-ink">
+                    <CheckCircle size={16} className="text-patina" />
                     <span className="font-medium">Create Roadmap Page - DONE</span>
                   </div>
-                  <div className="flex items-center gap-2 text-pink-800">
-                    <Clock size={16} className="text-blue-600" />
+                  <div className="flex items-center gap-2 text-ink">
+                    <Clock size={16} className="text-copper" />
                     <span className="font-medium">Implement Custom Email Sources UI</span>
                   </div>
-                  <div className="flex items-center gap-2 text-pink-800">
-                    <Clock size={16} className="text-gray-400" />
+                  <div className="flex items-center gap-2 text-slate">
+                    <Clock size={16} className="text-slate" />
                     <span>Add Dark Mode Toggle</span>
                   </div>
-                  <div className="flex items-center gap-2 text-pink-800">
-                    <Clock size={16} className="text-gray-400" />
+                  <div className="flex items-center gap-2 text-slate">
+                    <Clock size={16} className="text-slate" />
                     <span>Add Keyboard Shortcuts</span>
                   </div>
-                  <div className="flex items-center gap-2 text-pink-800">
-                    <Clock size={16} className="text-gray-400" />
+                  <div className="flex items-center gap-2 text-slate">
+                    <Clock size={16} className="text-slate" />
                     <span>Add Job Notes Field</span>
                   </div>
                 </div>
@@ -2152,15 +2237,15 @@ export default function App() {
           <>
             {/* Settings View */}
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">⚙️ Settings</h2>
-              <p className="text-gray-600 dark:text-gray-400">Configure custom email sources and application preferences</p>
+              <h2 className="font-display text-2xl text-ink mb-2">Settings</h2>
+              <p className="text-slate">Configure custom email sources and application preferences</p>
             </div>
 
             {/* Dark Mode Section */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mb-6 transition-colors duration-200">
-              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-gray-700 dark:to-gray-600 px-4 py-3 border-b border-purple-200 dark:border-gray-600">
-                <h3 className="font-bold text-purple-900 dark:text-purple-200">🌙 Appearance</h3>
-                <p className="text-sm text-purple-700 dark:text-purple-300 mt-1">
+            <div className="bg-parchment border border-warm-gray overflow-hidden mb-6">
+              <div className="bg-warm-gray/50 px-4 py-3 border-b border-warm-gray border-l-[3px] border-l-slate">
+                <h3 className="font-body font-bold text-ink">Appearance</h3>
+                <p className="text-sm text-slate mt-1">
                   Customize how Hammy looks
                 </p>
               </div>
@@ -2168,24 +2253,24 @@ export default function App() {
               <div className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="font-semibold text-gray-900 dark:text-white">Dark Mode</h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    <h4 className="font-body font-semibold text-ink">Dark Mode</h4>
+                    <p className="text-sm text-slate mt-1">
                       {darkMode ? 'Currently using dark theme' : 'Currently using light theme'}
                     </p>
                   </div>
                   <button
                     onClick={() => setDarkMode(!darkMode)}
-                    className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${
-                      darkMode ? 'bg-purple-600' : 'bg-gray-300'
+                    className={`relative inline-flex h-8 w-14 items-center transition-colors duration-200 focus:outline-none ${
+                      darkMode ? 'bg-copper' : 'bg-warm-gray'
                     }`}
                   >
                     <span
-                      className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform duration-200 ${
+                      className={`inline-block h-6 w-6 transform bg-parchment transition-transform duration-200 ${
                         darkMode ? 'translate-x-7' : 'translate-x-1'
                       }`}
                     >
-                      <span className="flex items-center justify-center h-full">
-                        {darkMode ? '🌙' : '☀️'}
+                      <span className="flex items-center justify-center h-full text-xs">
+                        {darkMode ? 'D' : 'L'}
                       </span>
                     </span>
                   </button>
@@ -2194,22 +2279,22 @@ export default function App() {
             </div>
 
             {/* Custom Email Sources Section */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
-              <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/30 px-4 py-3 border-b border-blue-200 dark:border-blue-700">
-                <h3 className="font-bold text-blue-900 dark:text-blue-300">📧 Custom Email Sources</h3>
-                <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+            <div className="bg-parchment border border-warm-gray overflow-hidden mb-6">
+              <div className="bg-warm-gray/50 px-4 py-3 border-b border-warm-gray border-l-[3px] border-l-copper">
+                <h3 className="font-body font-bold text-ink">Custom Email Sources</h3>
+                <p className="text-sm text-slate mt-1">
                   Add job boards and companies that send you job alerts via email
                 </p>
               </div>
 
               <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <p className="text-sm text-slate">
                     {customEmailSources.length} custom source{customEmailSources.length !== 1 ? 's' : ''} configured
                   </p>
                   <button
                     onClick={() => setShowAddEmailSource(!showAddEmailSource)}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="flex items-center gap-2 px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px transition-all"
                   >
                     <Plus size={18} />
                     {showAddEmailSource ? 'Cancel' : 'Add Email Source'}
@@ -2218,8 +2303,8 @@ export default function App() {
 
                 {/* Add Email Source Form */}
                 {showAddEmailSource && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4 mb-4">
-                    <h4 className="font-semibold text-blue-900 dark:text-blue-300 mb-3">Add New Email Source</h4>
+                  <div className="bg-warm-gray/30 border border-warm-gray p-4 mb-4">
+                    <h4 className="font-body font-semibold text-ink mb-3">Add New Email Source</h4>
                     <form onSubmit={(e) => {
                       e.preventDefault();
                       const formData = new FormData(e.target);
@@ -2233,59 +2318,59 @@ export default function App() {
                     }}>
                       <div className="space-y-3">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Source Name <span className="text-red-500">*</span>
+                          <label className="block text-sm font-body font-medium text-ink mb-1">
+                            Source Name <span className="text-rust">*</span>
                           </label>
                           <input
                             type="text"
                             name="name"
                             required
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                             placeholder="e.g., Stripe Careers, Remote.com Jobs"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          <label className="block text-sm font-body font-medium text-ink mb-1">
                             Sender Email
                           </label>
                           <input
                             type="email"
                             name="sender_email"
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                             placeholder="e.g., careers@stripe.com, jobs@remote.com"
                           />
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          <p className="text-xs text-slate mt-1">
                             The exact email address that sends job alerts
                           </p>
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          <label className="block text-sm font-body font-medium text-ink mb-1">
                             Sender Pattern (Alternative)
                           </label>
                           <input
                             type="text"
                             name="sender_pattern"
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                             placeholder="e.g., noreply@company.com"
                           />
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          <p className="text-xs text-slate mt-1">
                             Use if emails come from varying senders (one or the other required)
                           </p>
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          <label className="block text-sm font-body font-medium text-ink mb-1">
                             Subject Keywords (Optional)
                           </label>
                           <input
                             type="text"
                             name="subject_keywords"
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
                             placeholder="e.g., job alert, new opportunities, careers"
                           />
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          <p className="text-xs text-slate mt-1">
                             Comma-separated keywords to match in subject line
                           </p>
                         </div>
@@ -2293,14 +2378,14 @@ export default function App() {
                         <div className="flex gap-2 pt-2">
                           <button
                             type="submit"
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            className="px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px transition-all"
                           >
                             Add Source
                           </button>
                           <button
                             type="button"
                             onClick={() => setShowAddEmailSource(false)}
-                            className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                            className="px-4 py-2 bg-transparent border border-warm-gray text-slate rounded-none uppercase tracking-wide text-sm font-body hover:bg-warm-gray/50 transition-all"
                           >
                             Cancel
                           </button>
@@ -2312,30 +2397,30 @@ export default function App() {
 
                 {/* Email Sources List */}
                 {customEmailSources.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                    <Mail size={48} className="mx-auto mb-3 text-gray-300 dark:text-gray-600" />
-                    <p className="mb-2">No custom email sources yet</p>
-                    <p className="text-sm text-gray-400 dark:text-gray-500">
+                  <div className="text-center py-8">
+                    <Mail size={48} className="mx-auto mb-3 text-slate" />
+                    <p className="mb-2 text-slate">No custom email sources yet</p>
+                    <p className="text-sm text-slate">
                       Add email sources to scan job alerts from any company or job board
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {customEmailSources.map(source => (
-                      <div key={source.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 flex items-start justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                      <div key={source.id} className="border border-warm-gray p-3 flex items-start justify-between hover:border-copper transition-colors">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <h4 className="font-semibold text-gray-900 dark:text-white">{source.name}</h4>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            <h4 className="font-body font-semibold text-ink">{source.name}</h4>
+                            <span className={`text-xs px-2 py-0.5 border-l-[3px] ${
                               source.enabled
-                                ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                                ? 'border-l-patina bg-patina/10 text-patina'
+                                : 'border-l-slate bg-warm-gray/30 text-slate'
                             }`}>
                               {source.enabled ? 'Active' : 'Disabled'}
                             </span>
                           </div>
                           {source.sender_email && (
-                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                            <p className="text-sm text-slate mt-1">
                               <Mail size={14} className="inline mr-1" />
                               From: {source.sender_email}
                             </p>
@@ -2411,6 +2496,7 @@ export default function App() {
           </>
         )}
       </main>
+      </div>
 
       {/* Resume Upload Modal */}
       {showResumeModal && (
@@ -2425,11 +2511,11 @@ export default function App() {
         {toasts.map(toast => (
           <div
             key={toast.id}
-            className={`px-4 py-3 rounded-lg shadow-lg text-white transform transition-all duration-300 animate-slide-in ${
-              toast.type === 'success' ? 'bg-teal-600' :
-              toast.type === 'error' ? 'bg-red-600' :
-              toast.type === 'warning' ? 'bg-yellow-600' :
-              'bg-blue-600'
+            className={`px-4 py-3 shadow-lg text-parchment font-body transform transition-all duration-300 animate-slide-in border-l-[3px] ${
+              toast.type === 'success' ? 'bg-patina border-l-patina' :
+              toast.type === 'error' ? 'bg-rust border-l-rust' :
+              toast.type === 'warning' ? 'bg-cream text-ink border-l-cream' :
+              'bg-copper border-l-copper'
             }`}
           >
             <div className="flex items-center gap-2">
@@ -2443,47 +2529,47 @@ export default function App() {
 
       {/* Keyboard Shortcuts Help Modal */}
       {showShortcutsHelp && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-parchment border border-warm-gray shadow-xl max-w-md w-full">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white">⌨️ Keyboard Shortcuts</h3>
+                <h3 className="font-display text-xl text-ink">Keyboard Shortcuts</h3>
                 <button
                   onClick={() => setShowShortcutsHelp(false)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  className="text-slate hover:text-ink"
                 >
                   <XCircle size={24} />
                 </button>
               </div>
 
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                  <span className="text-gray-700 dark:text-gray-300">Navigate down</span>
-                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">j</kbd>
+                <div className="flex items-center justify-between p-2 bg-warm-gray/30">
+                  <span className="text-ink font-body">Navigate down</span>
+                  <kbd className="px-2 py-1 bg-parchment border border-warm-gray font-mono text-sm text-ink">j</kbd>
                 </div>
-                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                  <span className="text-gray-700 dark:text-gray-300">Navigate up</span>
-                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">k</kbd>
+                <div className="flex items-center justify-between p-2 bg-warm-gray/30">
+                  <span className="text-ink font-body">Navigate up</span>
+                  <kbd className="px-2 py-1 bg-parchment border border-warm-gray font-mono text-sm text-ink">k</kbd>
                 </div>
-                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                  <span className="text-gray-700 dark:text-gray-300">Focus search</span>
-                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">/</kbd>
+                <div className="flex items-center justify-between p-2 bg-warm-gray/30">
+                  <span className="text-ink font-body">Focus search</span>
+                  <kbd className="px-2 py-1 bg-parchment border border-warm-gray font-mono text-sm text-ink">/</kbd>
                 </div>
-                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                  <span className="text-gray-700 dark:text-gray-300">Open selected job</span>
-                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">Enter</kbd>
+                <div className="flex items-center justify-between p-2 bg-warm-gray/30">
+                  <span className="text-ink font-body">Open selected job</span>
+                  <kbd className="px-2 py-1 bg-parchment border border-warm-gray font-mono text-sm text-ink">Enter</kbd>
                 </div>
-                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                  <span className="text-gray-700 dark:text-gray-300">Delete selected job</span>
-                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">d</kbd>
+                <div className="flex items-center justify-between p-2 bg-warm-gray/30">
+                  <span className="text-ink font-body">Delete selected job</span>
+                  <kbd className="px-2 py-1 bg-parchment border border-warm-gray font-mono text-sm text-ink">d</kbd>
                 </div>
-                <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                  <span className="text-gray-700 dark:text-gray-300">Show this help</span>
-                  <kbd className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded font-mono text-sm">?</kbd>
+                <div className="flex items-center justify-between p-2 bg-warm-gray/30">
+                  <span className="text-ink font-body">Show this help</span>
+                  <kbd className="px-2 py-1 bg-parchment border border-warm-gray font-mono text-sm text-ink">?</kbd>
                 </div>
               </div>
 
-              <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+              <p className="mt-4 text-sm text-slate font-body">
                 Shortcuts work on the All Applications view
               </p>
             </div>
