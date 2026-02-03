@@ -1,15 +1,12 @@
 """
-Claude AI Provider - Anthropic Claude implementation
+OpenAI Provider - OpenAI GPT implementation
 
-This module provides the Claude-specific AI implementation.
+This module provides the OpenAI-specific AI implementation.
 """
 
-import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
-
-import anthropic
+from typing import Any, Dict, Optional
 
 from .base import AIProvider
 from .prompts import (
@@ -23,15 +20,15 @@ from .prompts import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_MODEL = "gpt-4o"
 
 
-class ClaudeProvider(AIProvider):
-    """Claude AI provider using the Anthropic API."""
+class OpenAIProvider(AIProvider):
+    """OpenAI GPT provider using the OpenAI API."""
 
     def __init__(self, config: Optional[Dict] = None):
         """
-        Initialize Claude provider.
+        Initialize OpenAI provider.
 
         Args:
             config: Configuration dict with optional 'ai.model' setting
@@ -41,18 +38,26 @@ class ClaudeProvider(AIProvider):
         self._model = ai_config.get('model') or DEFAULT_MODEL
 
         # Check for API key
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
             raise ValueError(
-                "ANTHROPIC_API_KEY not found. "
+                "OPENAI_API_KEY not found. "
                 "Set it in .env or environment variables."
             )
 
-        self._client = anthropic.Anthropic()
+        # Import openai here to avoid requiring it if not used
+        try:
+            import openai
+            self._client = openai.OpenAI()
+        except ImportError:
+            raise ImportError(
+                "openai package not installed. "
+                "Install it with: pip install openai"
+            )
 
     @property
     def provider_name(self) -> str:
-        return 'claude'
+        return 'openai'
 
     @property
     def model_name(self) -> str:
@@ -64,16 +69,16 @@ class ClaudeProvider(AIProvider):
         max_tokens: int = 1000,
         model: Optional[str] = None
     ) -> str:
-        """Generate a response using Claude."""
+        """Generate a response using OpenAI."""
         try:
-            response = self._client.messages.create(
+            response = self._client.chat.completions.create(
                 model=model or self._model,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}]
             )
-            return response.content[0].text.strip()
+            return response.choices[0].message.content.strip()
         except Exception as e:
-            logger.error(f"Claude generation error: {e}")
+            logger.error(f"OpenAI generation error: {e}")
             raise
 
     def filter_and_score(
@@ -128,6 +133,8 @@ class ClaudeProvider(AIProvider):
         analysis: Optional[Dict[str, Any]] = None
     ) -> str:
         """Generate a tailored cover letter."""
+        import json
+
         # Parse analysis from job if not provided separately
         if analysis is None and job.get('analysis'):
             try:
@@ -165,10 +172,9 @@ class ClaudeProvider(AIProvider):
         """
         Search for and enrich job description data.
 
-        Note: Claude has web search capabilities that could be used here.
-        For now, this is a stub that will be implemented in Phase 4.
+        Note: OpenAI does not have built-in web search.
+        This would require integration with a search API.
         """
-        # TODO: Implement with Claude's web search in Phase 4
         return {
             "found": False,
             "description": "",
@@ -176,7 +182,7 @@ class ClaudeProvider(AIProvider):
             "salary_range": None,
             "source_url": None,
             "enrichment_status": "not_supported",
-            "error": "Web search enrichment not yet implemented for Claude provider."
+            "error": "Web search enrichment not supported for OpenAI provider."
         }
 
     def classify_email(
@@ -202,8 +208,8 @@ class ClaudeProvider(AIProvider):
             }
 
 
-# Legacy support: maintain compatibility with old interface
-def get_claude_provider(model: Optional[str] = None) -> ClaudeProvider:
-    """Get Claude provider instance (legacy function)."""
+# Legacy support function
+def get_openai_provider(model: Optional[str] = None) -> OpenAIProvider:
+    """Get OpenAI provider instance."""
     config = {'ai': {'model': model}} if model else {}
-    return ClaudeProvider(config)
+    return OpenAIProvider(config)

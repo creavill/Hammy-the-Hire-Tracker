@@ -37,10 +37,17 @@ def create_app(config_path=None):
         logger.error(f"Configuration Error: {e}")
         raise
 
-    # Validate API key
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        logger.error("ANTHROPIC_API_KEY not set in environment")
-        raise ValueError("ANTHROPIC_API_KEY not set in environment. Set it in your .env file.")
+    # Validate at least one AI provider API key is set
+    has_anthropic = bool(os.getenv("ANTHROPIC_API_KEY"))
+    has_openai = bool(os.getenv("OPENAI_API_KEY"))
+    has_google = bool(os.getenv("GOOGLE_API_KEY"))
+
+    if not (has_anthropic or has_openai or has_google):
+        logger.error("No AI provider API key set in environment")
+        raise ValueError(
+            "No AI provider API key found. "
+            "Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY in your .env file."
+        )
 
     # Create Flask app
     app = Flask(

@@ -13,16 +13,93 @@ from typing import Optional, List, Dict
 from .client import get_gmail_service, get_email_body
 from app.parsers import (
     parse_linkedin_jobs, parse_indeed_jobs,
-    parse_greenhouse_jobs, parse_wellfound_jobs
+    parse_greenhouse_jobs, parse_wellfound_jobs,
+    get_parser_for_source, GenericAIParser, detect_source, parse_email
 )
 from app.database import DB_PATH, get_db
 
 logger = logging.getLogger(__name__)
 
 
+def _load_email_sources():
+    """
+    Load enabled email sources from the database.
+
+    Returns:
+        List of source configurations with parser info
+    """
+    conn = sqlite3.connect(DB_PATH)
+    sources = conn.execute("""
+        SELECT id, name, sender_email, sender_pattern, subject_keywords,
+               is_builtin, category, parser_class
+        FROM custom_email_sources
+        WHERE enabled = 1
+        ORDER BY is_builtin DESC, name
+    """).fetchall()
+    conn.close()
+
+    return [
+        {
+            'id': s[0],
+            'name': s[1],
+            'sender_email': s[2],
+            'sender_pattern': s[3],
+            'subject_keywords': s[4],
+            'is_builtin': s[5],
+            'category': s[6],
+            'parser_class': s[7]
+        }
+        for s in sources
+    ]
+
+
+def _build_query_for_source(source: dict, after_date: str) -> Optional[str]:
+    """
+    Build Gmail search query for an email source.
+
+    Args:
+        source: Source configuration dictionary
+        after_date: Date string in YYYY/MM/DD format
+
+    Returns:
+        Gmail query string or None if no valid query can be built
+    """
+    query_parts = []
+
+    sender_email = source.get('sender_email', '')
+    sender_pattern = source.get('sender_pattern', '')
+    subject_keywords = source.get('subject_keywords', '')
+
+    if sender_email:
+        query_parts.append(f'from:{sender_email}')
+    elif sender_pattern:
+        # Handle patterns like "@linkedin.com"
+        patterns = [p.strip() for p in sender_pattern.split(',')]
+        if len(patterns) == 1:
+            query_parts.append(f'from:*{patterns[0]}' if patterns[0].startswith('@') else f'from:{patterns[0]}')
+        else:
+            from_parts = ' OR '.join([f'from:*{p}' if p.startswith('@') else f'from:{p}' for p in patterns])
+            query_parts.append(f'({from_parts})')
+
+    if subject_keywords:
+        keywords = [kw.strip() for kw in subject_keywords.split(',') if kw.strip()]
+        if keywords:
+            subject_part = ' OR '.join([f'subject:{kw}' for kw in keywords])
+            query_parts.append(f'({subject_part})')
+
+    if query_parts:
+        return ' '.join(query_parts) + f' after:{after_date}'
+
+    return None
+
+
 def scan_emails(days_back: int = 7) -> List[Dict]:
     """
-    Scan Gmail for job alert emails from multiple sources.
+    Scan Gmail for job alert emails from configured sources.
+
+    Uses the email sources from the database (both built-in and custom).
+    Each source has an associated parser - specialized parsers for known
+    job boards, or the AI parser for custom sources.
 
     Args:
         days_back: How many days back to scan on first run (default: 7)
@@ -52,56 +129,46 @@ def scan_emails(days_back: int = 7) -> List[Dict]:
         after_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y/%m/%d')
         logger.info(f"First scan - looking back {days_back} days: {after_date}")
 
-    # Query all job board emails + follow-ups
-    queries = [
-        f'from:jobs-noreply@linkedin.com after:{after_date}',
-        f'from:jobalerts-noreply@linkedin.com after:{after_date}',
-        f'from:noreply@indeed.com after:{after_date}',
-        f'from:alert@indeed.com after:{after_date}',
-        f'from:no-reply@us.greenhouse-jobs.com after:{after_date}',
-        f'from:team@hi.wellfound.com after:{after_date}',
-        f'(subject:job OR subject:career OR subject:position OR subject:"now hiring") -from:linkedin.com -from:indeed.com -from:greenhouse.io -from:wellfound.com after:{after_date}',
-        f'(subject:interview OR subject:"next steps" OR subject:update OR subject:"application received" OR subject:confirmation) after:{after_date}',
+    # Load email sources from database
+    email_sources = _load_email_sources()
+    logger.info(f"Loaded {len(email_sources)} email sources to scan")
+
+    # Build queries for each source and create source->parser mapping
+    source_queries = []
+    for source in email_sources:
+        query = _build_query_for_source(source, after_date)
+        if query:
+            parser = get_parser_for_source(source)
+            source_queries.append({
+                'query': query,
+                'source': source,
+                'parser': parser
+            })
+            logger.debug(f"Source '{source['name']}': {query}")
+
+    # Add fallback queries for follow-up detection
+    followup_queries = [
+        f'(subject:interview OR subject:"next steps" OR subject:update OR subject:"application received") after:{after_date}',
         f'(subject:unfortunately OR subject:offer OR subject:congratulations OR subject:"thank you for applying") after:{after_date}',
     ]
-
-    # Add custom email sources from database
-    conn_sources = sqlite3.connect(DB_PATH)
-    custom_sources = conn_sources.execute(
-        "SELECT name, sender_email, sender_pattern, subject_keywords FROM custom_email_sources WHERE enabled = 1"
-    ).fetchall()
-    conn_sources.close()
-
-    for source in custom_sources:
-        source_name, sender_email, sender_pattern, subject_keywords = source
-        query_parts = []
-
-        if sender_email:
-            query_parts.append(f'from:{sender_email}')
-        elif sender_pattern:
-            query_parts.append(f'from:{sender_pattern}')
-
-        if subject_keywords:
-            keywords = [kw.strip() for kw in subject_keywords.split(',')]
-            subject_part = ' OR '.join([f'subject:{kw}' for kw in keywords if kw])
-            if subject_part:
-                query_parts.append(f'({subject_part})')
-
-        if query_parts:
-            custom_query = ' '.join(query_parts) + f' after:{after_date}'
-            queries.append(custom_query)
-            logger.info(f"Added custom source: {source_name} -> {custom_query}")
 
     all_jobs = []
     seen_job_ids = set()
     total_emails = 0
 
-    for query in queries:
+    # Process each source's query
+    for sq in source_queries:
+        query = sq['query']
+        source_config = sq['source']
+        parser = sq['parser']
+        source_name = source_config['name']
+
         try:
             results = service.users().messages().list(userId='me', q=query, maxResults=100).execute()
             messages = results.get('messages', [])
             total_emails += len(messages)
 
+            source_jobs = 0
             for msg_info in messages:
                 try:
                     message = service.users().messages().get(userId='me', id=msg_info['id'], format='full').execute()
@@ -111,7 +178,7 @@ def scan_emails(days_back: int = 7) -> List[Dict]:
                     if not html:
                         continue
 
-                    # Check if follow-up email
+                    # Check if follow-up email (skip these for job extraction)
                     subject = ''
                     for header in message.get('payload', {}).get('headers', []):
                         if header['name'].lower() == 'subject':
@@ -124,39 +191,28 @@ def scan_emails(days_back: int = 7) -> List[Dict]:
                     ])
 
                     if is_followup:
-                        logger.info(f"Follow-up detected: {subject[:60]}...")
+                        logger.debug(f"Follow-up detected (skipped): {subject[:60]}...")
                         continue
 
-                    # Route to appropriate parser
-                    if 'linkedin' in query:
-                        jobs = parse_linkedin_jobs(html, email_date)
-                    elif 'indeed' in query:
-                        jobs = parse_indeed_jobs(html, email_date)
-                    elif 'greenhouse' in query:
-                        jobs = parse_greenhouse_jobs(html, email_date)
-                    elif 'wellfound' in query:
-                        jobs = parse_wellfound_jobs(html, email_date)
-                    else:
-                        jobs = []
+                    # Parse with the appropriate parser
+                    jobs = parser.parse(html, email_date)
 
                     # Deduplicate
-                    unique_jobs = []
                     for job in jobs:
                         if job['job_id'] not in seen_job_ids:
                             seen_job_ids.add(job['job_id'])
-                            unique_jobs.append(job)
-
-                    all_jobs.extend(unique_jobs)
-                    if unique_jobs:
-                        source_name = query.split('from:')[1].split()[0] if 'from:' in query else 'follow-ups'
-                        logger.info(f"Found {len(unique_jobs)} unique jobs from {source_name}")
+                            all_jobs.append(job)
+                            source_jobs += 1
 
                 except Exception as e:
-                    logger.error(f"Error parsing email {msg_info['id']}: {e}")
+                    logger.error(f"Error parsing email {msg_info['id']} for {source_name}: {e}")
                     continue
 
+            if source_jobs > 0:
+                logger.info(f"Found {source_jobs} jobs from {source_name}")
+
         except Exception as e:
-            logger.error(f"Query failed - {query}: {e}")
+            logger.error(f"Query failed for {source_name}: {e}")
             continue
 
     # Save current scan timestamp

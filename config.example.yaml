@@ -130,7 +130,18 @@ email:
 
 # ===== AI CONFIGURATION =====
 ai:
-  # Model to use for job analysis (default: claude-sonnet-4-20250514)
+  # AI Provider to use for job analysis
+  # Options: claude, openai, gemini
+  # Make sure you have the corresponding API key in your .env file:
+  #   - claude: ANTHROPIC_API_KEY
+  #   - openai: OPENAI_API_KEY
+  #   - gemini: GOOGLE_API_KEY
+  provider: "claude"
+
+  # Model to use (depends on provider selected above)
+  # Claude models: claude-sonnet-4-20250514, claude-3-haiku-20240307, claude-3-5-sonnet-20241022
+  # OpenAI models: gpt-4o, gpt-4o-mini, gpt-4-turbo
+  # Gemini models: gemini-1.5-pro, gemini-1.5-flash, gemini-2.0-flash-exp
   model: "claude-sonnet-4-20250514"
 
   # Analysis strictness
