@@ -37,6 +37,7 @@ from parsers import fetch_wwr_jobs, generate_job_id, clean_job_url
 from config_loader import get_config
 from constants import APP_DIR
 from backup_manager import BackupManager
+from app.ai import get_provider_info, get_available_providers
 
 logger = logging.getLogger(__name__)
 
@@ -1929,25 +1930,58 @@ def register_routes(app):
         conn.close()
         return jsonify({'success': True})
 
-    # ============== Custom Email Sources ==============
-    @app.route('/api/custom-email-sources', methods=['GET'])
-    def get_custom_email_sources():
-        """Get all custom email sources."""
+    # ============== Email Sources (Built-in + Custom) ==============
+    @app.route('/api/email-sources', methods=['GET'])
+    def get_email_sources():
+        """
+        Get all email sources (both built-in and custom).
+
+        Returns sources grouped by category with built-in sources first.
+        """
         conn = get_db()
         sources = [dict(row) for row in conn.execute(
-            "SELECT * FROM custom_email_sources ORDER BY created_at DESC"
+            """SELECT * FROM custom_email_sources
+               ORDER BY is_builtin DESC, category, name"""
+        ).fetchall()]
+        conn.close()
+
+        # Group by category
+        categories = {}
+        for source in sources:
+            cat = source.get('category', 'custom')
+            if cat not in categories:
+                categories[cat] = []
+            categories[cat].append(source)
+
+        return jsonify({
+            'sources': sources,
+            'categories': categories,
+            'total': len(sources),
+            'builtin_count': sum(1 for s in sources if s.get('is_builtin')),
+            'custom_count': sum(1 for s in sources if not s.get('is_builtin'))
+        })
+
+    # Legacy endpoint for backwards compatibility
+    @app.route('/api/custom-email-sources', methods=['GET'])
+    def get_custom_email_sources():
+        """Get all custom email sources (legacy endpoint)."""
+        conn = get_db()
+        sources = [dict(row) for row in conn.execute(
+            "SELECT * FROM custom_email_sources ORDER BY is_builtin DESC, created_at DESC"
         ).fetchall()]
         conn.close()
         return jsonify({'sources': sources})
 
+    @app.route('/api/email-sources', methods=['POST'])
     @app.route('/api/custom-email-sources', methods=['POST'])
-    def add_custom_email_source():
+    def add_email_source():
         """Add a new custom email source."""
         data = request.json
         name = data.get('name', '').strip()
         sender_email = data.get('sender_email', '').strip()
         sender_pattern = data.get('sender_pattern', '').strip()
         subject_keywords = data.get('subject_keywords', '').strip()
+        category = data.get('category', 'custom').strip()
 
         if not name:
             return jsonify({'error': 'Source name is required'}), 400
@@ -1957,49 +1991,206 @@ def register_routes(app):
 
         conn = get_db()
         now = datetime.now().isoformat()
-        conn.execute(
+        cursor = conn.execute(
             """INSERT INTO custom_email_sources
-               (name, sender_email, sender_pattern, subject_keywords, enabled, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 1, ?, ?)""",
-            (name, sender_email, sender_pattern, subject_keywords, now, now)
+               (name, sender_email, sender_pattern, subject_keywords, category,
+                is_builtin, enabled, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?)""",
+            (name, sender_email, sender_pattern, subject_keywords, category, now, now)
         )
+        source_id = cursor.lastrowid
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'id': source_id})
 
+    @app.route('/api/email-sources/<int:source_id>', methods=['PATCH'])
     @app.route('/api/custom-email-sources/<int:source_id>', methods=['PATCH'])
-    def update_custom_email_source(source_id):
-        """Update a custom email source."""
+    def update_email_source(source_id):
+        """Update an email source. Built-in sources can only toggle enabled."""
         data = request.json
-        name = data.get('name', '').strip()
-        sender_email = data.get('sender_email', '').strip()
-        sender_pattern = data.get('sender_pattern', '').strip()
-        subject_keywords = data.get('subject_keywords', '').strip()
-        enabled = data.get('enabled', 1)
-
-        if not name:
-            return jsonify({'error': 'Source name is required'}), 400
-
         conn = get_db()
+
+        # Check if it's a built-in source
+        source = conn.execute(
+            "SELECT is_builtin FROM custom_email_sources WHERE id = ?",
+            (source_id,)
+        ).fetchone()
+
+        if not source:
+            conn.close()
+            return jsonify({'error': 'Source not found'}), 404
+
         now = datetime.now().isoformat()
-        conn.execute(
-            """UPDATE custom_email_sources
-               SET name = ?, sender_email = ?, sender_pattern = ?, subject_keywords = ?, enabled = ?, updated_at = ?
-               WHERE id = ?""",
-            (name, sender_email, sender_pattern, subject_keywords, enabled, now, source_id)
-        )
+
+        if source['is_builtin']:
+            # Built-in sources can only toggle enabled status
+            enabled = data.get('enabled', 1)
+            conn.execute(
+                "UPDATE custom_email_sources SET enabled = ?, updated_at = ? WHERE id = ?",
+                (enabled, now, source_id)
+            )
+        else:
+            # Custom sources can be fully updated
+            name = data.get('name', '').strip()
+            sender_email = data.get('sender_email', '').strip()
+            sender_pattern = data.get('sender_pattern', '').strip()
+            subject_keywords = data.get('subject_keywords', '').strip()
+            enabled = data.get('enabled', 1)
+            category = data.get('category', 'custom').strip()
+
+            if not name:
+                conn.close()
+                return jsonify({'error': 'Source name is required'}), 400
+
+            conn.execute(
+                """UPDATE custom_email_sources
+                   SET name = ?, sender_email = ?, sender_pattern = ?,
+                       subject_keywords = ?, enabled = ?, category = ?, updated_at = ?
+                   WHERE id = ?""",
+                (name, sender_email, sender_pattern, subject_keywords, enabled, category, now, source_id)
+            )
+
         conn.commit()
         conn.close()
         return jsonify({'success': True})
 
+    @app.route('/api/email-sources/<int:source_id>', methods=['DELETE'])
     @app.route('/api/custom-email-sources/<int:source_id>', methods=['DELETE'])
-    def delete_custom_email_source(source_id):
-        """Delete a custom email source."""
+    def delete_email_source(source_id):
+        """Delete a custom email source. Built-in sources cannot be deleted."""
         conn = get_db()
+
+        # Check if it's a built-in source
+        source = conn.execute(
+            "SELECT is_builtin, name FROM custom_email_sources WHERE id = ?",
+            (source_id,)
+        ).fetchone()
+
+        if not source:
+            conn.close()
+            return jsonify({'error': 'Source not found'}), 404
+
+        if source['is_builtin']:
+            conn.close()
+            return jsonify({
+                'error': f"Cannot delete built-in source '{source['name']}'. You can disable it instead."
+            }), 400
+
         conn.execute("DELETE FROM custom_email_sources WHERE id = ?", (source_id,))
         conn.commit()
         conn.close()
         return jsonify({'success': True})
+
+    @app.route('/api/email-sources/test-pattern', methods=['POST'])
+    def test_email_pattern():
+        """
+        Test an email source pattern against recent emails.
+
+        Request Body:
+            sender_pattern (str): Pattern to match (e.g., "@linkedin.com")
+            sender_email (str): Exact email to match
+            subject_keywords (str): Comma-separated keywords
+            days_back (int): How many days to look back (default: 7)
+
+        Returns:
+            JSON with:
+            - matches: Number of matching emails found
+            - sample_subjects: Sample matching email subjects
+            - sample_senders: Sample matching senders
+        """
+        try:
+            data = request.get_json() or {}
+            sender_pattern = data.get('sender_pattern', '').strip().lower()
+            sender_email = data.get('sender_email', '').strip().lower()
+            subject_keywords = data.get('subject_keywords', '').strip().lower()
+            days_back = int(data.get('days_back', 7))
+
+            if not sender_pattern and not sender_email:
+                return jsonify({'error': 'Either sender_pattern or sender_email is required'}), 400
+
+            # Import email scanner
+            from gmail_scanner import get_gmail_service, get_email_details, get_email_body
+            from datetime import datetime, timedelta
+
+            service = get_gmail_service()
+            if not service:
+                return jsonify({'error': 'Gmail service not configured'}), 400
+
+            # Build search query
+            after_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y/%m/%d')
+            query_parts = [f'after:{after_date}']
+
+            if sender_email:
+                query_parts.append(f'from:{sender_email}')
+            elif sender_pattern:
+                # For patterns like "@linkedin.com", search for emails from that domain
+                if sender_pattern.startswith('@'):
+                    query_parts.append(f'from:*{sender_pattern}')
+                else:
+                    query_parts.append(f'from:{sender_pattern}')
+
+            query = ' '.join(query_parts)
+            logger.info(f"Testing pattern with query: {query}")
+
+            # Search for emails
+            results = service.users().messages().list(
+                userId='me',
+                q=query,
+                maxResults=50
+            ).execute()
+
+            messages = results.get('messages', [])
+            matching_emails = []
+            sample_subjects = []
+            sample_senders = []
+
+            # Process keywords if provided
+            keywords = [k.strip() for k in subject_keywords.split(',') if k.strip()] if subject_keywords else []
+
+            for msg_info in messages[:20]:  # Check up to 20 messages
+                try:
+                    msg = service.users().messages().get(
+                        userId='me',
+                        id=msg_info['id'],
+                        format='metadata',
+                        metadataHeaders=['Subject', 'From']
+                    ).execute()
+
+                    headers = {h['name']: h['value'] for h in msg.get('payload', {}).get('headers', [])}
+                    subject = headers.get('Subject', '')
+                    sender = headers.get('From', '')
+
+                    # If keywords provided, check if any match
+                    if keywords:
+                        subject_lower = subject.lower()
+                        if not any(kw in subject_lower for kw in keywords):
+                            continue
+
+                    matching_emails.append({
+                        'subject': subject,
+                        'sender': sender
+                    })
+
+                    if subject and subject not in sample_subjects:
+                        sample_subjects.append(subject[:100])
+                    if sender and sender not in sample_senders:
+                        sample_senders.append(sender)
+
+                except Exception as e:
+                    logger.warning(f"Error processing test message: {e}")
+                    continue
+
+            return jsonify({
+                'matches': len(matching_emails),
+                'total_found': len(messages),
+                'sample_subjects': sample_subjects[:5],
+                'sample_senders': list(set(sample_senders))[:5],
+                'query_used': query
+            })
+
+        except Exception as e:
+            logger.error(f"Error testing email pattern: {e}")
+            return jsonify({'error': str(e)}), 500
 
     # ============== External Applications ==============
     @app.route('/api/external-applications', methods=['GET'])
@@ -3079,5 +3270,96 @@ def register_routes(app):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
-    
+    @app.route('/api/ai/providers')
+    def api_ai_providers():
+        """
+        Get information about available AI providers.
+
+        Route: GET /api/ai/providers
+
+        Returns:
+            JSON response with provider information including:
+            - providers: Dict of provider info (name, env_var, has_key, models, etc.)
+            - current_provider: Currently configured provider name
+            - current_model: Currently configured model name
+        """
+        try:
+            providers = get_provider_info()
+
+            # Get current provider and model from config
+            current_provider = CONFIG.get('ai', {}).get('provider', 'claude')
+            current_model = CONFIG.get('ai', {}).get('model', 'claude-sonnet-4-20250514')
+
+            return jsonify({
+                'providers': providers,
+                'current_provider': current_provider,
+                'current_model': current_model
+            })
+        except Exception as e:
+            logger.error(f"Error getting AI providers: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/ai/test', methods=['POST'])
+    def api_ai_test():
+        """
+        Test an AI provider connection.
+
+        Route: POST /api/ai/test
+
+        Request Body:
+            provider (str): Provider to test ('claude', 'openai', 'gemini')
+
+        Returns:
+            JSON response with:
+            - success: bool indicating if test passed
+            - provider: Provider name
+            - model: Model used for test
+            - message: Result message or error
+        """
+        try:
+            data = request.get_json() or {}
+            provider_name = data.get('provider', 'claude')
+
+            # Import and test the provider
+            from app.ai import get_provider
+
+            test_config = {
+                'ai': {
+                    'provider': provider_name
+                }
+            }
+
+            provider = get_provider(test_config)
+
+            # Simple test: just verify we can create the provider
+            # The provider init already validates API key
+            return jsonify({
+                'success': True,
+                'provider': provider.provider_name,
+                'model': provider.model_name,
+                'message': f'{provider.provider_name} provider is configured correctly'
+            })
+        except ValueError as e:
+            # Missing API key or invalid provider
+            return jsonify({
+                'success': False,
+                'error': str(e),
+                'message': 'Provider configuration error'
+            }), 400
+        except ImportError as e:
+            # Package not installed
+            return jsonify({
+                'success': False,
+                'error': str(e),
+                'message': 'Required package not installed'
+            }), 400
+        except Exception as e:
+            logger.error(f"Error testing AI provider: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e),
+                'message': 'Test failed'
+            }), 500
+
+
     return app

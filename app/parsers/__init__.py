@@ -31,6 +31,7 @@ from .indeed import IndeedParser
 from .greenhouse import GreenhouseParser
 from .wellfound import WellfoundParser
 from .weworkremotely import WeWorkRemotelyParser, fetch_wwr_jobs
+from .generic_ai import GenericAIParser, create_ai_parser
 
 logger = logging.getLogger(__name__)
 
@@ -97,16 +98,24 @@ def detect_source(html: str) -> Optional[str]:
     return None
 
 
-def parse_email(html: str, email_date: str, source: Optional[str] = None) -> List[dict]:
+def parse_email(
+    html: str,
+    email_date: str,
+    source: Optional[str] = None,
+    use_ai_fallback: bool = True
+) -> List[dict]:
     """
     Parse an email and extract job listings.
 
     If source is not provided, attempts to auto-detect the source.
+    If no specialized parser exists and use_ai_fallback is True,
+    uses the GenericAIParser as a fallback.
 
     Args:
         html: Raw HTML content from email
         email_date: ISO format date string
         source: Optional source identifier
+        use_ai_fallback: Whether to use AI parser if no specialized parser found
 
     Returns:
         List of job dictionaries
@@ -114,16 +123,52 @@ def parse_email(html: str, email_date: str, source: Optional[str] = None) -> Lis
     if source is None:
         source = detect_source(html)
 
-    if source is None:
-        logger.warning("Could not detect email source")
-        return []
+    # Try specialized parser first
+    if source is not None:
+        parser = get_parser(source)
+        if parser is not None:
+            return parser.parse(html, email_date)
 
-    parser = get_parser(source)
-    if parser is None:
-        logger.warning(f"No parser found for source: {source}")
-        return []
+    # No specialized parser available
+    if use_ai_fallback:
+        logger.info(f"Using AI parser for source: {source or 'unknown'}")
+        ai_parser = GenericAIParser(source or 'custom')
+        return ai_parser.parse(html, email_date)
 
-    return parser.parse(html, email_date)
+    logger.warning(f"No parser found for source: {source}")
+    return []
+
+
+def get_parser_for_source(source_config: dict) -> BaseParser:
+    """
+    Get a parser instance for a custom email source configuration.
+
+    Uses the parser_class if specified, otherwise falls back to GenericAIParser.
+
+    Args:
+        source_config: Dictionary with source configuration including:
+            - name: Source name
+            - parser_class: Optional parser class path
+
+    Returns:
+        Parser instance
+    """
+    parser_class = source_config.get('parser_class')
+    source_name = source_config.get('name', 'custom')
+
+    if parser_class:
+        try:
+            # Try to import the specified parser class
+            module_path, class_name = parser_class.rsplit('.', 1)
+            import importlib
+            module = importlib.import_module(module_path)
+            parser_cls = getattr(module, class_name)
+            return parser_cls()
+        except Exception as e:
+            logger.warning(f"Failed to load parser {parser_class}: {e}, using AI parser")
+
+    # Fall back to AI parser
+    return GenericAIParser(source_name)
 
 
 # Re-export commonly used utilities from base
@@ -175,6 +220,7 @@ __all__ = [
     # Registry
     'PARSER_REGISTRY',
     'get_parser',
+    'get_parser_for_source',
     'detect_source',
     'parse_email',
     # Parsers
@@ -184,6 +230,8 @@ __all__ = [
     'GreenhouseParser',
     'WellfoundParser',
     'WeWorkRemotelyParser',
+    'GenericAIParser',
+    'create_ai_parser',
     # Utilities
     'clean_job_url',
     'generate_job_id',

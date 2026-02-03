@@ -168,6 +168,10 @@ def init_db():
             sender_pattern TEXT,
             subject_keywords TEXT,
             enabled INTEGER DEFAULT 1,
+            is_builtin INTEGER DEFAULT 0,
+            category TEXT DEFAULT 'custom',
+            parser_class TEXT,
+            sample_email TEXT,
             created_at TEXT,
             updated_at TEXT
         )
@@ -189,6 +193,9 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+    # Seed built-in email sources
+    seed_builtin_sources()
 
 
 def run_migrations(conn):
@@ -228,6 +235,15 @@ def run_migrations(conn):
         conn.execute("ALTER TABLE jobs ADD COLUMN selected_resume_id TEXT")
         conn.execute("ALTER TABLE jobs ADD COLUMN resume_match_score REAL")
 
+    # Migration: Add email sources columns
+    email_sources_columns = {row[1] for row in conn.execute("PRAGMA table_info(custom_email_sources)").fetchall()}
+    if 'is_builtin' not in email_sources_columns:
+        logger.info("Migrating database: adding email sources columns...")
+        conn.execute("ALTER TABLE custom_email_sources ADD COLUMN is_builtin INTEGER DEFAULT 0")
+        conn.execute("ALTER TABLE custom_email_sources ADD COLUMN category TEXT DEFAULT 'custom'")
+        conn.execute("ALTER TABLE custom_email_sources ADD COLUMN parser_class TEXT")
+        conn.execute("ALTER TABLE custom_email_sources ADD COLUMN sample_email TEXT")
+
 
 def get_db():
     """
@@ -254,3 +270,115 @@ def close_db(e=None):
     db = g.pop('db', None)
     if db is not None:
         db.close()
+
+
+# Built-in email sources with their parser configurations
+BUILTIN_EMAIL_SOURCES = [
+    {
+        'name': 'LinkedIn Job Alerts',
+        'sender_pattern': '@linkedin.com',
+        'subject_keywords': 'job,jobs,hiring,opportunity',
+        'category': 'job_board',
+        'parser_class': 'app.parsers.linkedin.LinkedInParser',
+    },
+    {
+        'name': 'Indeed Job Alerts',
+        'sender_pattern': '@indeed.com,@indeedemail.com',
+        'subject_keywords': 'job,jobs,hiring,new jobs',
+        'category': 'job_board',
+        'parser_class': 'app.parsers.indeed.IndeedParser',
+    },
+    {
+        'name': 'Greenhouse ATS',
+        'sender_pattern': '@greenhouse.io',
+        'subject_keywords': 'job,opportunity,career',
+        'category': 'ats',
+        'parser_class': 'app.parsers.greenhouse.GreenhouseParser',
+    },
+    {
+        'name': 'Wellfound (AngelList)',
+        'sender_pattern': '@wellfound.com,@angel.co',
+        'subject_keywords': 'job,jobs,startup,opportunity',
+        'category': 'job_board',
+        'parser_class': 'app.parsers.wellfound.WellfoundParser',
+    },
+    {
+        'name': 'Glassdoor',
+        'sender_pattern': '@glassdoor.com',
+        'subject_keywords': 'job,jobs,hiring',
+        'category': 'job_board',
+        'parser_class': None,  # Uses generic AI parser
+    },
+    {
+        'name': 'ZipRecruiter',
+        'sender_pattern': '@ziprecruiter.com',
+        'subject_keywords': 'job,jobs,hiring,match',
+        'category': 'job_board',
+        'parser_class': None,  # Uses generic AI parser
+    },
+    {
+        'name': 'Dice',
+        'sender_pattern': '@dice.com',
+        'subject_keywords': 'job,jobs,tech,hiring',
+        'category': 'job_board',
+        'parser_class': None,  # Uses generic AI parser
+    },
+]
+
+
+def seed_builtin_sources():
+    """
+    Seed the database with built-in email sources.
+
+    This function is called on app startup to ensure all built-in sources
+    are in the database. It only inserts sources that don't already exist.
+
+    Built-in sources have is_builtin=1 and cannot be deleted by users.
+    """
+    from datetime import datetime
+
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    now = datetime.utcnow().isoformat()
+
+    for source in BUILTIN_EMAIL_SOURCES:
+        # Check if source already exists by name
+        existing = conn.execute(
+            "SELECT id FROM custom_email_sources WHERE name = ? AND is_builtin = 1",
+            (source['name'],)
+        ).fetchone()
+
+        if existing:
+            # Update existing source in case parser changed
+            conn.execute("""
+                UPDATE custom_email_sources
+                SET sender_pattern = ?, subject_keywords = ?, category = ?,
+                    parser_class = ?, updated_at = ?
+                WHERE id = ?
+            """, (
+                source['sender_pattern'],
+                source['subject_keywords'],
+                source['category'],
+                source['parser_class'],
+                now,
+                existing[0]
+            ))
+        else:
+            # Insert new built-in source
+            conn.execute("""
+                INSERT INTO custom_email_sources
+                (name, sender_pattern, subject_keywords, category, parser_class,
+                 is_builtin, enabled, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?)
+            """, (
+                source['name'],
+                source['sender_pattern'],
+                source['subject_keywords'],
+                source['category'],
+                source['parser_class'],
+                now,
+                now
+            ))
+
+    conn.commit()
+    conn.close()
+    logger.info(f"Seeded {len(BUILTIN_EMAIL_SOURCES)} built-in email sources")
