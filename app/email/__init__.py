@@ -1,16 +1,21 @@
 """
-Gmail Scanner - Gmail integration (Backwards Compatibility Wrapper)
+Email Package - Gmail integration for Hammy the Hire Tracker
 
-This module provides backwards compatibility for code importing from gmail_scanner.py.
-The actual implementation has moved to app/email/.
+This module provides Gmail API integration for scanning job alerts
+and follow-up emails.
 
-For new code, import directly from app.email:
+Usage:
     from app.email import scan_emails, scan_followup_emails
+    from app.email import GmailClient, get_gmail_service
+
+    # Scan for job alerts
+    jobs = scan_emails(days_back=7)
+
+    # Scan for follow-ups
+    followups = scan_followup_emails(days_back=30)
 """
 
-# Re-export everything from app.email for backwards compatibility
-from app.email import (
-    # Client
+from .client import (
     GmailClient,
     get_gmail_client,
     get_gmail_service,
@@ -18,7 +23,9 @@ from app.email import (
     SCOPES,
     CREDENTIALS_FILE,
     TOKEN_FILE,
-    # Scanner
+)
+
+from .scanner import (
     scan_emails,
     scan_followup_emails,
     classify_followup_email,
