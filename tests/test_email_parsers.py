@@ -41,10 +41,10 @@ def test_parse_linkedin_url_cleaning():
     """Test that LinkedIn URLs are properly cleaned of tracking parameters."""
     from app.parsers import clean_job_url
 
-    dirty_url = "https://www.linkedin.com/jobs/view/123456?refId=abc&trk=email&position=1"
+    dirty_url = "https://www.linkedin.com/jobs/view/1234567890?refId=abc&trk=email&position=1"
     clean_url = clean_job_url(dirty_url)
 
-    assert clean_url == "https://www.linkedin.com/jobs/view/123456"
+    assert clean_url == "https://www.linkedin.com/jobs/view/1234567890"
     assert "refId" not in clean_url
     assert "trk" not in clean_url
 

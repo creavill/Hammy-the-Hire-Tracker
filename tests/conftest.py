@@ -112,7 +112,7 @@ def sample_linkedin_email():
             <table>
                 <tr>
                     <td>
-                        <a href="https://www.linkedin.com/jobs/view/123456?refId=abc&trk=email">
+                        <a href="https://www.linkedin.com/jobs/view/1234567890?refId=abc&trk=email">
                             Senior Full-Stack Developer
                         </a>
                     </td>
