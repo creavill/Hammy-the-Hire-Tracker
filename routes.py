@@ -1135,22 +1135,41 @@ def register_routes(app):
 
         try:
             for followup in followups:
-                # Check if this follow-up already exists
-                existing = conn.execute(
-                    "SELECT id FROM followups WHERE company = ? AND subject = ? AND email_date = ?",
-                    (followup['company'], followup['subject'], followup['email_date'])
-                ).fetchone()
+                # Check if this follow-up already exists (by gmail_message_id or company+subject+date)
+                gmail_msg_id = followup.get('gmail_message_id')
+                if gmail_msg_id:
+                    existing = conn.execute(
+                        "SELECT id FROM followups WHERE gmail_message_id = ?",
+                        (gmail_msg_id,)
+                    ).fetchone()
+                else:
+                    existing = conn.execute(
+                        "SELECT id FROM followups WHERE company = ? AND subject = ? AND email_date = ?",
+                        (followup['company'], followup['subject'], followup['email_date'])
+                    ).fetchone()
 
                 if existing:
                     continue  # Skip duplicates
 
-                # Insert follow-up into database
+                # Insert follow-up into database with expanded fields
                 conn.execute(
-                    '''INSERT INTO followups (company, subject, type, snippet, email_date, job_id, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                    (followup['company'], followup['subject'], followup['type'],
-                     followup['snippet'], followup['email_date'], followup['job_id'],
-                     datetime.now().isoformat())
+                    '''INSERT INTO followups (
+                        company, subject, type, snippet, email_date, job_id, created_at,
+                        gmail_message_id, sender_email, ai_summary
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (
+                        followup['company'],
+                        followup['subject'],
+                        followup['type'],
+                        followup['snippet'],
+                        followup['email_date'],
+                        followup['job_id'],
+                        datetime.now().isoformat(),
+                        followup.get('gmail_message_id'),
+                        followup.get('sender_email'),
+                        f"{followup['type'].title()} from {followup['company']}" +
+                        (f" for {followup.get('role')}" if followup.get('role') else "")
+                    )
                 )
                 conn.commit()
                 new_count += 1
