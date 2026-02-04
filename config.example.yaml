@@ -122,6 +122,11 @@ email:
   # How many days back to scan on first run
   initial_scan_days: 7
 
+  # What to do with job alert emails after scanning
+  # Options: none, archive, delete
+  # Only affects job alert emails — follow-ups are never touched
+  post_scan_action: "none"
+
   # Additional email sources to scan (beyond default job boards)
   custom_sources:
     - from: "careers@example.com"

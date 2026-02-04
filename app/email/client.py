@@ -16,8 +16,9 @@ from googleapiclient.discovery import build
 
 logger = logging.getLogger(__name__)
 
-# Gmail API scopes - readonly access to messages
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# Gmail API scopes - modify access for read, archive, label, and trash
+# Note: upgrade from gmail.readonly requires re-auth (delete token.json)
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 # File paths (relative to project root)
 APP_DIR = Path(__file__).parent.parent.parent
@@ -129,6 +130,73 @@ class GmailClient:
             service.users().messages().list(userId="me", q=query, maxResults=max_results).execute()
         )
         return results.get("messages", [])
+
+    def archive_message(self, msg_id: str):
+        """
+        Archive a Gmail message (remove INBOX label, keep in All Mail).
+
+        Args:
+            msg_id: Gmail message ID
+        """
+        service = self.get_service()
+        service.users().messages().modify(
+            userId="me", id=msg_id, body={"removeLabelIds": ["INBOX"]}
+        ).execute()
+        logger.debug(f"Archived message {msg_id}")
+
+    def trash_message(self, msg_id: str):
+        """
+        Move a Gmail message to trash.
+
+        Args:
+            msg_id: Gmail message ID
+        """
+        service = self.get_service()
+        service.users().messages().trash(userId="me", id=msg_id).execute()
+        logger.debug(f"Trashed message {msg_id}")
+
+    def add_label(self, msg_id: str, label_id: str):
+        """
+        Add a label to a Gmail message.
+
+        Args:
+            msg_id: Gmail message ID
+            label_id: Gmail label ID
+        """
+        service = self.get_service()
+        service.users().messages().modify(
+            userId="me", id=msg_id, body={"addLabelIds": [label_id]}
+        ).execute()
+
+    def get_or_create_label(self, label_name: str) -> str:
+        """
+        Get a Gmail label ID by name, creating it if it doesn't exist.
+
+        Args:
+            label_name: Label name (e.g., 'Hammy/Scanned')
+
+        Returns:
+            Label ID string
+        """
+        service = self.get_service()
+
+        # Check existing labels
+        results = service.users().labels().list(userId="me").execute()
+        labels = results.get("labels", [])
+
+        for label in labels:
+            if label["name"] == label_name:
+                return label["id"]
+
+        # Create the label
+        label_body = {
+            "name": label_name,
+            "labelListVisibility": "labelShow",
+            "messageListVisibility": "show",
+        }
+        created = service.users().labels().create(userId="me", body=label_body).execute()
+        logger.info(f"Created Gmail label: {label_name}")
+        return created["id"]
 
 
 def get_email_body(payload: dict) -> str:

@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 
-from .client import get_gmail_service, get_email_body
+from .client import get_gmail_service, get_gmail_client, get_email_body
 from app.parsers import (
     parse_linkedin_jobs,
     parse_indeed_jobs,
@@ -42,7 +42,7 @@ def _load_email_sources():
     conn = sqlite3.connect(DB_PATH)
     sources = conn.execute("""
         SELECT id, name, sender_email, sender_pattern, subject_keywords,
-               is_builtin, category, parser_class
+               is_builtin, category, parser_class, post_scan_action
         FROM custom_email_sources
         WHERE enabled = 1
         ORDER BY is_builtin DESC, name
@@ -59,6 +59,7 @@ def _load_email_sources():
             "is_builtin": s[5],
             "category": s[6],
             "parser_class": s[7],
+            "post_scan_action": s[8] or "none",
         }
         for s in sources
     ]
@@ -166,6 +167,11 @@ def scan_emails(days_back: int = 7) -> List[Dict]:
     all_jobs = []
     seen_job_ids = set()
     total_emails = 0
+    cleaned_emails = 0
+
+    # Get Gmail client for post-scan cleanup
+    gmail_client = get_gmail_client()
+    _hammy_label_id = None  # Lazily cached label ID
 
     # Process each source's query
     for sq in source_queries:
@@ -173,6 +179,7 @@ def scan_emails(days_back: int = 7) -> List[Dict]:
         source_config = sq["source"]
         parser = sq["parser"]
         source_name = source_config["name"]
+        post_scan_action = source_config.get("post_scan_action", "none")
 
         try:
             results = (
@@ -183,11 +190,12 @@ def scan_emails(days_back: int = 7) -> List[Dict]:
 
             source_jobs = 0
             for msg_info in messages:
+                msg_id = msg_info["id"]
                 try:
                     message = (
                         service.users()
                         .messages()
-                        .get(userId="me", id=msg_info["id"], format="full")
+                        .get(userId="me", id=msg_id, format="full")
                         .execute()
                     )
                     email_date = datetime.fromtimestamp(
@@ -232,8 +240,27 @@ def scan_emails(days_back: int = 7) -> List[Dict]:
                             all_jobs.append(job)
                             source_jobs += 1
 
+                    # Post-scan cleanup: archive or delete job alert emails
+                    # Only applies to Route 1 (job alerts), never to follow-ups
+                    if post_scan_action == "archive":
+                        try:
+                            # Label before archiving so user can find them later
+                            if _hammy_label_id is None:
+                                _hammy_label_id = gmail_client.get_or_create_label("Hammy/Scanned")
+                            gmail_client.add_label(msg_id, _hammy_label_id)
+                            gmail_client.archive_message(msg_id)
+                            cleaned_emails += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to archive email {msg_id}: {e}")
+                    elif post_scan_action == "delete":
+                        try:
+                            gmail_client.trash_message(msg_id)
+                            cleaned_emails += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to trash email {msg_id}: {e}")
+
                 except Exception as e:
-                    logger.error(f"Error parsing email {msg_info['id']} for {source_name}: {e}")
+                    logger.error(f"Error parsing email {msg_id} for {source_name}: {e}")
                     continue
 
             if source_jobs > 0:
@@ -253,9 +280,15 @@ def scan_emails(days_back: int = 7) -> List[Dict]:
     conn.commit()
     conn.close()
 
-    logger.info(
-        f"Scan complete: {total_emails} emails checked, {len(all_jobs)} unique jobs extracted"
-    )
+    if cleaned_emails > 0:
+        logger.info(
+            f"Scan complete: {total_emails} emails checked, {len(all_jobs)} unique jobs extracted, "
+            f"{cleaned_emails} emails cleaned up"
+        )
+    else:
+        logger.info(
+            f"Scan complete: {total_emails} emails checked, {len(all_jobs)} unique jobs extracted"
+        )
     return all_jobs
 
 
@@ -327,10 +360,40 @@ def classify_followup_email(subject: str, snippet: str) -> str:
         word in text
         for word in [
             "received your application",
+            "we received your application",
+            "we have received your application",
+            "your application has been received",
+            "application has been received",
             "thank you for applying",
+            "thank you for your application",
+            "thanks for applying",
             "application has been",
+            "application has been submitted",
+            "application confirmed",
+            "successfully submitted",
             "reviewing your",
+            "we're reviewing your",
+            "your application is being reviewed",
+            "your application is under review",
             "under review",
+            "your application for the position",
+            "your application for the role",
+            "application for the position of",
+            "application for the role of",
+            "regarding your application",
+            "position you applied for",
+            "role you applied for",
+            "thank you for submitting",
+            "thanks for your interest",
+            "your interest in the position",
+            "your interest in the role",
+            "your interest in joining",
+            "we appreciate your interest",
+            "you applied for",
+            "your recent application",
+            "your application was sent",
+            "your application to",
+            "thank you for your interest in the",
         ]
     ):
         return "received"
@@ -439,9 +502,19 @@ def extract_role_from_subject(subject: str) -> Optional[str]:
     """
     # Common patterns for role extraction
     patterns = [
-        r"application for[:\s]+(.+?)(?:\s+at\s+|\s+with\s+|\s*$)",  # "application for: DevOps Engineer"
+        # "application for: DevOps Engineer" / "application for DevOps Engineer at X"
+        r"application for[:\s]+(.+?)(?:\s+at\s+|\s+with\s+|\s*$)",
         r"your application[:\s]+(.+?)(?:\s+at\s+|\s+with\s+|\s*$)",
         r"applied for[:\s]+(.+?)(?:\s+at\s+|\s+with\s+|\s*$)",
+        # "position of Cloud Engineer" / "role of DevOps Engineer"
+        r"position of\s+(.+?)(?:\s+at\s+|\.|,|\s-\s|$)",
+        r"role of\s+(.+?)(?:\s+at\s+|\.|,|\s-\s|$)",
+        # "applied for the position of X" / "interest in the role of X"
+        r"applied for (?:the )?(?:position|role)?\s*(?:of )?\s*(.+?)(?:\s+at\s+|\.|,|$)",
+        r"interest in (?:the )?(?:position|role)?\s*(?:of )?\s*(.+?)(?:\s+at\s+|\.|,|$)",
+        # "regarding the Cloud Engineer position"
+        r"regarding (?:the )?(.+?) (?:position|role)",
+        # "for Software Engineer role/position/job"
         r"for[:\s]+([A-Z][A-Za-z0-9\s/()-]+?)\s+(?:role|position|job)",
         r"(?:role|position)[:\s]+(.+?)(?:\s+at\s+|\s*$)",
     ]
@@ -515,11 +588,22 @@ def scan_followup_emails(days_back: int = 30) -> List[Dict]:
     after_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y/%m/%d")
 
     queries = [
+        # Interview signals
         f'(subject:interview OR subject:"phone screen" OR subject:"next steps" OR subject:"schedule") after:{after_date}',
+        # Rejection signals
         f'(subject:unfortunately OR subject:"not selected" OR subject:"other candidates" OR subject:"decided to pursue") after:{after_date}',
+        # Offer signals
         f'(subject:offer OR subject:congratulations OR subject:"pleased to extend") after:{after_date}',
+        # Assessment signals
         f'(subject:assessment OR subject:"coding challenge" OR subject:"take-home") after:{after_date}',
+        # Narrow confirmation signals (subject-specific)
         f'(subject:"received your application" OR subject:"thank you for applying" OR subject:"application for") after:{after_date}',
+        # Broad confirmation sweep — catches most automated confirmations
+        f'(subject:application OR subject:"your candidacy" OR subject:"your submission") after:{after_date}',
+        # Position/role keywords that frequently appear in confirmation and follow-up emails
+        f'(subject:"the position" OR subject:"the role" OR subject:"regarding your") after:{after_date}',
+        # Body-level confirmation patterns (Gmail searches body too)
+        f'("your application" OR "thank you for your interest" OR "we appreciate your interest") after:{after_date}',
     ]
 
     followups = []
