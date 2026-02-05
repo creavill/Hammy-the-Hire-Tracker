@@ -988,7 +988,7 @@ def register_routes(app):
 
         # Log each followup found
         for i, fu in enumerate(followups):
-            write_log(log_file, f"Followup #{i+1}: {fu.get('type')} - {fu.get('subject')[:60]}", {
+            write_log(log_file, f"Followup #{i+1}: {fu.get('type')} - {fu.get('subject')[:60] if fu.get('subject') else 'No subject'}", {
                 "company": fu.get("company"),
                 "classification": fu.get("type")
             })
@@ -1189,6 +1189,284 @@ def register_routes(app):
                 "log_file": str(log_file.name),
             }
         )
+
+    @app.route("/api/scan-and-process", methods=["POST"])
+    def api_scan_and_process():
+        """
+        Unified scan, enrich, and score pipeline - the main entry point.
+
+        Route: POST /api/scan-and-process
+
+        This is the ALL-IN-ONE endpoint that:
+        1. Scans Gmail for new job alert emails
+        2. Extracts jobs and filters by location/seniority
+        3. Enriches each NEW job with web search (once per job)
+        4. Scores each job with AI (once per job, never rescored)
+        5. Stores follow-up emails (rejections, interviews, etc.)
+
+        Jobs are only processed ONCE:
+        - enrichment_status tracks: 'pending' → 'enriched' → 'scored'
+        - Jobs with status='scored' are never reprocessed
+
+        Returns:
+            JSON with:
+            - jobs_found: Total jobs extracted from emails
+            - jobs_new: New jobs stored
+            - jobs_enriched: Jobs enriched with web search
+            - jobs_scored: Jobs scored by AI
+            - jobs_skipped: Jobs already processed
+            - followups_found: Follow-up emails detected
+            - log_file: Path to the detailed log file
+        """
+        # Create comprehensive log file
+        log_file = create_operation_log("process")
+        write_log(log_file, "=" * 60)
+        write_log(log_file, "=== UNIFIED SCAN & PROCESS STARTED ===")
+        write_log(log_file, "=" * 60)
+
+        results = {
+            "jobs_found": 0,
+            "jobs_new": 0,
+            "jobs_enriched": 0,
+            "jobs_scored": 0,
+            "jobs_skipped": 0,
+            "jobs_filtered": 0,
+            "followups_found": 0,
+            "followups_new": 0,
+            "errors": [],
+        }
+
+        try:
+            # === PHASE 1: SCAN EMAILS ===
+            write_log(log_file, "\n--- PHASE 1: SCANNING EMAILS ---")
+            scan_result = scan_emails()
+            jobs = scan_result["jobs"]
+            followups = scan_result["followups"]
+
+            results["jobs_found"] = len(jobs)
+            results["followups_found"] = len(followups)
+
+            write_log(log_file, f"Found {len(jobs)} jobs from email alerts")
+            write_log(log_file, f"Found {len(followups)} follow-up emails")
+
+            # Log all jobs found
+            for i, job in enumerate(jobs):
+                write_log(log_file, f"  Job #{i+1}: {job.get('title', 'Unknown')} at {job.get('company', 'Unknown')}")
+
+            # Load resumes for scoring
+            resume_text = load_resumes()
+            if not resume_text:
+                write_log(log_file, "ERROR: No resumes found")
+                return jsonify({"error": "No resumes found", "log_file": str(log_file.name)}), 400
+
+            # === PHASE 2: STORE & FILTER NEW JOBS ===
+            write_log(log_file, "\n--- PHASE 2: STORING NEW JOBS ---")
+            conn = get_db()
+            new_job_ids = []
+
+            for job in jobs:
+                # Check if already exists
+                existing = conn.execute(
+                    """SELECT job_id, enrichment_status FROM jobs
+                       WHERE job_id = ? OR url = ? OR (company = ? AND title = ?)""",
+                    (job["job_id"], job["url"], job["company"], job["title"]),
+                ).fetchone()
+
+                if existing:
+                    results["jobs_skipped"] += 1
+                    write_log(log_file, f"  SKIP (exists): {job['title'][:40]}")
+                    continue
+
+                # Check if previously deleted
+                deleted = conn.execute(
+                    "SELECT id FROM deleted_jobs WHERE job_url = ?", (job["url"],)
+                ).fetchone()
+                if deleted:
+                    write_log(log_file, f"  SKIP (deleted): {job['title'][:40]}")
+                    continue
+
+                # Quick filter check (location/seniority)
+                keep, baseline_score, reason = ai_filter_and_score(job, resume_text)
+
+                if not keep:
+                    results["jobs_filtered"] += 1
+                    write_log(log_file, f"  FILTERED: {job['title'][:40]} - {reason[:50]}")
+                    # Store as filtered
+                    conn.execute(
+                        """INSERT INTO jobs (job_id, title, company, location, url, source, raw_text,
+                                           baseline_score, created_at, updated_at, email_date,
+                                           is_filtered, notes, enrichment_status)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'skipped')""",
+                        (job["job_id"], job["title"], job["company"], job["location"],
+                         job["url"], job["source"], job["raw_text"], baseline_score,
+                         job["created_at"], datetime.now().isoformat(),
+                         job.get("email_date", job["created_at"]), reason),
+                    )
+                    conn.commit()
+                    continue
+
+                # Store new job as 'pending'
+                conn.execute(
+                    """INSERT INTO jobs (job_id, title, company, location, url, source, raw_text,
+                                       baseline_score, created_at, updated_at, email_date,
+                                       is_filtered, enrichment_status)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending')""",
+                    (job["job_id"], job["title"], job["company"], job["location"],
+                     job["url"], job["source"], job["raw_text"], baseline_score,
+                     job["created_at"], datetime.now().isoformat(),
+                     job.get("email_date", job["created_at"])),
+                )
+                conn.commit()
+                new_job_ids.append(job["job_id"])
+                results["jobs_new"] += 1
+                write_log(log_file, f"  NEW: {job['title'][:40]} (initial score: {baseline_score})")
+
+            # === PHASE 3: ENRICH NEW JOBS ===
+            write_log(log_file, "\n--- PHASE 3: ENRICHING JOBS (WEB SEARCH) ---")
+
+            try:
+                from app.enrichment import enrich_job
+
+                # Get all jobs needing enrichment (pending status)
+                pending_jobs = conn.execute(
+                    """SELECT job_id, title, company, url FROM jobs
+                       WHERE enrichment_status = 'pending' AND is_filtered = 0"""
+                ).fetchall()
+
+                write_log(log_file, f"Jobs to enrich: {len(pending_jobs)}")
+
+                for job_row in pending_jobs:
+                    job_id = job_row["job_id"]
+                    write_log(log_file, f"  Enriching: {job_row['title'][:40]} at {job_row['company']}")
+
+                    try:
+                        enrich_result = enrich_job(job_id)
+                        if enrich_result.get("success"):
+                            # Mark as enriched
+                            conn.execute(
+                                "UPDATE jobs SET enrichment_status = 'enriched' WHERE job_id = ?",
+                                (job_id,)
+                            )
+                            conn.commit()
+                            results["jobs_enriched"] += 1
+                            write_log(log_file, f"    ✓ Enriched: salary={enrich_result.get('salary_estimate', 'N/A')}")
+                        else:
+                            write_log(log_file, f"    ✗ Failed: {enrich_result.get('error', 'Unknown error')}")
+                    except Exception as e:
+                        write_log(log_file, f"    ✗ Error: {str(e)}")
+                        results["errors"].append(f"Enrich {job_id}: {str(e)}")
+
+            except ImportError:
+                write_log(log_file, "  Enrichment module not available, skipping")
+
+            # === PHASE 4: SCORE ENRICHED JOBS ===
+            write_log(log_file, "\n--- PHASE 4: SCORING JOBS (AI) ---")
+
+            # Get jobs that are enriched but not yet scored
+            to_score = conn.execute(
+                """SELECT * FROM jobs
+                   WHERE enrichment_status IN ('pending', 'enriched')
+                   AND is_filtered = 0
+                   AND (score IS NULL OR score = 0 OR baseline_score IS NULL OR baseline_score = 0)"""
+            ).fetchall()
+
+            write_log(log_file, f"Jobs to score: {len(to_score)}")
+
+            for job_row in to_score:
+                job = dict(job_row)
+                write_log(log_file, f"  Scoring: {job['title'][:40]}")
+
+                try:
+                    _, final_score, reason = ai_filter_and_score(job, resume_text)
+                    conn.execute(
+                        """UPDATE jobs SET score = ?, baseline_score = ?, notes = ?,
+                           enrichment_status = 'scored', updated_at = ? WHERE job_id = ?""",
+                        (final_score, final_score, reason, datetime.now().isoformat(), job["job_id"]),
+                    )
+                    conn.commit()
+                    results["jobs_scored"] += 1
+                    write_log(log_file, f"    ✓ Score: {final_score}")
+                except Exception as e:
+                    write_log(log_file, f"    ✗ Error: {str(e)}")
+                    results["errors"].append(f"Score {job['job_id']}: {str(e)}")
+
+            # === PHASE 5: STORE FOLLOW-UPS ===
+            write_log(log_file, "\n--- PHASE 5: STORING FOLLOW-UPS ---")
+
+            for followup in followups:
+                gmail_msg_id = followup.get("gmail_message_id")
+                if gmail_msg_id:
+                    existing = conn.execute(
+                        "SELECT id FROM followups WHERE gmail_message_id = ?", (gmail_msg_id,)
+                    ).fetchone()
+                else:
+                    existing = conn.execute(
+                        "SELECT id FROM followups WHERE company = ? AND subject = ? AND email_date = ?",
+                        (followup["company"], followup["subject"], followup["email_date"]),
+                    ).fetchone()
+
+                if existing:
+                    continue
+
+                conn.execute(
+                    """INSERT INTO followups (company, subject, type, snippet, email_date, job_id,
+                       created_at, gmail_message_id, sender_email, ai_summary)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (followup["company"], followup["subject"], followup["type"],
+                     followup["snippet"], followup["email_date"], followup["job_id"],
+                     datetime.now().isoformat(), followup.get("gmail_message_id"),
+                     followup.get("sender_email"),
+                     f"{followup['type'].title()} from {followup['company']}"),
+                )
+                conn.commit()
+                results["followups_new"] += 1
+                write_log(log_file, f"  {followup['type']}: {followup['subject'][:50]}")
+
+                # Auto-update job status
+                if followup["job_id"]:
+                    job_status = conn.execute(
+                        "SELECT status FROM jobs WHERE job_id = ?", (followup["job_id"],)
+                    ).fetchone()
+                    if job_status:
+                        current = job_status[0]
+                        new_status = current
+                        if followup["type"] == "rejection":
+                            new_status = "rejected"
+                        elif followup["type"] == "interview" and current not in ["interviewing", "offer"]:
+                            new_status = "interviewing"
+                        elif followup["type"] == "offer":
+                            new_status = "offer"
+
+                        if new_status != current:
+                            conn.execute(
+                                "UPDATE jobs SET status = ? WHERE job_id = ?",
+                                (new_status, followup["job_id"])
+                            )
+                            conn.commit()
+
+            conn.close()
+
+            # === SUMMARY ===
+            write_log(log_file, "\n" + "=" * 60)
+            write_log(log_file, "=== PROCESSING COMPLETE ===")
+            write_log(log_file, "=" * 60)
+            write_log(log_file, f"Jobs found in emails: {results['jobs_found']}")
+            write_log(log_file, f"New jobs stored: {results['jobs_new']}")
+            write_log(log_file, f"Jobs enriched: {results['jobs_enriched']}")
+            write_log(log_file, f"Jobs scored: {results['jobs_scored']}")
+            write_log(log_file, f"Jobs skipped (duplicates): {results['jobs_skipped']}")
+            write_log(log_file, f"Jobs filtered out: {results['jobs_filtered']}")
+            write_log(log_file, f"Follow-ups stored: {results['followups_new']}")
+            if results["errors"]:
+                write_log(log_file, f"Errors: {len(results['errors'])}")
+
+            results["log_file"] = str(log_file.name)
+            return jsonify(results)
+
+        except Exception as e:
+            logger.error(f"Error in scan-and-process: {e}")
+            write_log(log_file, f"FATAL ERROR: {str(e)}")
+            return jsonify({"error": str(e), "log_file": str(log_file.name)}), 500
 
     @app.route("/api/analyze", methods=["POST"])
     def api_analyze():

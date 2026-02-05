@@ -1277,6 +1277,166 @@ function EmailTemplatesView() {
   );
 }
 
+// Logs Viewer Component
+function LogsViewer() {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedLog, setSelectedLog] = useState(null);
+  const [logContent, setLogContent] = useState('');
+  const [loadingContent, setLoadingContent] = useState(false);
+
+  useEffect(() => {
+    fetchLogs();
+  }, []);
+
+  const fetchLogs = async () => {
+    try {
+      const res = await fetch('/api/logs');
+      const data = await res.json();
+      setLogs(data.logs || []);
+    } catch (err) {
+      console.error('Failed to fetch logs:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const viewLog = async (logName) => {
+    setSelectedLog(logName);
+    setLoadingContent(true);
+    try {
+      const res = await fetch(`/api/logs/${logName}`);
+      const data = await res.json();
+      setLogContent(data.content || '');
+    } catch (err) {
+      console.error('Failed to fetch log content:', err);
+      setLogContent('Error loading log content');
+    } finally {
+      setLoadingContent(false);
+    }
+  };
+
+  const deleteLog = async (logName, e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete ${logName}?`)) return;
+    try {
+      await fetch(`/api/logs/${logName}`, { method: 'DELETE' });
+      fetchLogs();
+      if (selectedLog === logName) {
+        setSelectedLog(null);
+        setLogContent('');
+      }
+    } catch (err) {
+      console.error('Failed to delete log:', err);
+    }
+  };
+
+  const downloadLog = () => {
+    if (!selectedLog || !logContent) return;
+    const blob = new Blob([logContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = selectedLog;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="bg-parchment border border-warm-gray overflow-hidden mb-6">
+      <div className="bg-warm-gray/50 px-4 py-3 border-b border-warm-gray border-l-[3px] border-l-patina">
+        <h3 className="font-body font-bold text-ink flex items-center gap-2">
+          <FileText size={18} className="text-patina" />
+          Operation Logs
+        </h3>
+        <p className="text-sm text-slate mt-1">
+          View logs from scan and score operations
+        </p>
+      </div>
+
+      <div className="p-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-4">
+            <RefreshCw size={20} className="animate-spin text-copper" />
+          </div>
+        ) : logs.length === 0 ? (
+          <p className="text-sm text-slate">
+            No logs yet. Run "Process Emails" to generate logs.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {/* Log list */}
+            <div className="flex flex-wrap gap-2">
+              {logs.slice(0, 10).map((log) => (
+                <button
+                  key={log.name}
+                  onClick={() => viewLog(log.name)}
+                  className={`group flex items-center gap-2 px-3 py-2 text-sm border transition-colors ${
+                    selectedLog === log.name
+                      ? 'border-copper bg-copper/10 text-copper'
+                      : 'border-warm-gray text-ink hover:border-copper'
+                  }`}
+                >
+                  <span className={`uppercase tracking-wide text-xs font-semibold ${
+                    log.type === 'process' ? 'text-patina' :
+                    log.type === 'scan' ? 'text-copper' :
+                    log.type === 'score' ? 'text-rust' : 'text-slate'
+                  }`}>
+                    {log.type}
+                  </span>
+                  <span className="text-slate text-xs">
+                    {new Date(log.created).toLocaleDateString()} {new Date(log.created).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  </span>
+                  <button
+                    onClick={(e) => deleteLog(log.name, e)}
+                    className="opacity-0 group-hover:opacity-100 text-rust hover:text-rust/80 transition-opacity"
+                    title="Delete log"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </button>
+              ))}
+            </div>
+
+            {/* Log content */}
+            {selectedLog && (
+              <div className="border border-warm-gray">
+                <div className="flex items-center justify-between px-3 py-2 bg-warm-gray/30 border-b border-warm-gray">
+                  <span className="font-mono text-sm text-ink">{selectedLog}</span>
+                  <button
+                    onClick={downloadLog}
+                    className="text-xs text-copper hover:text-copper/80 flex items-center gap-1"
+                  >
+                    <Download size={14} /> Download
+                  </button>
+                </div>
+                {loadingContent ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw size={20} className="animate-spin text-copper" />
+                  </div>
+                ) : (
+                  <pre className="px-3 py-2 text-xs font-mono text-ink whitespace-pre-wrap max-h-96 overflow-y-auto bg-parchment">
+                    {logContent}
+                  </pre>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={fetchLogs}
+              className="text-xs text-copper hover:text-copper/80 flex items-center gap-1"
+            >
+              <RefreshCw size={12} /> Refresh logs
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -1483,34 +1643,53 @@ export default function App() {
     };
   }, [fetchExternalApps]);
 
-  const handleScan = async () => {
+  // UNIFIED: Scan + Enrich + Score all in one
+  const handleProcessEmails = async () => {
     setScanning(true);
-    showToast('Scanning emails...', 'info');
+    showToast('Processing emails (scan → enrich → score)...', 'info');
     try {
-      await fetch(`${API_BASE}/scan`, { method: 'POST' });
-      showToast('Email scan complete! Refreshing jobs...', 'success');
-      // Poll for updates after a delay
-      setTimeout(fetchJobs, 5000);
-      setTimeout(fetchJobs, 15000);
-      setTimeout(fetchJobs, 30000);
+      const response = await fetch(`${API_BASE}/scan-and-process`, { method: 'POST' });
+      const data = await response.json();
+      if (data.error) {
+        showToast(`Processing failed: ${data.error}`, 'error');
+      } else {
+        const summary = [
+          data.jobs_new > 0 ? `${data.jobs_new} new jobs` : null,
+          data.jobs_enriched > 0 ? `${data.jobs_enriched} enriched` : null,
+          data.jobs_scored > 0 ? `${data.jobs_scored} scored` : null,
+          data.followups_new > 0 ? `${data.followups_new} follow-ups` : null,
+        ].filter(Boolean).join(', ');
+        showToast(`✓ ${summary || 'No new jobs found'}`, 'success');
+        if (data.log_file) {
+          console.log(`Log file: logs/${data.log_file}`);
+        }
+      }
+      // Refresh jobs
+      setTimeout(fetchJobs, 2000);
     } catch (err) {
-      console.error('Scan failed:', err);
-      showToast('Scan failed. Please try again.', 'error');
+      console.error('Processing failed:', err);
+      showToast('Processing failed. Check console for details.', 'error');
     }
     setScanning(false);
   };
 
+  // Legacy scan (for backwards compatibility)
+  const handleScan = handleProcessEmails;
+
   const handleScoreJobs = async () => {
     setScoring(true);
     try {
-      const response = await fetch(`${API_BASE}/score-jobs`, { method: 'POST' });
+      const response = await fetch(`${API_BASE}/score-jobs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enrich_first: true }),
+      });
       const data = await response.json();
       if (data.error) {
         showToast(`Scoring failed: ${data.error}`, 'error');
       } else {
-        showToast(`✓ Scored ${data.scored} jobs out of ${data.total}`, 'success');
+        showToast(`✓ Enriched ${data.enriched || 0}, Scored ${data.scored}/${data.total}`, 'success');
       }
-      // Refresh jobs to show new scores
       setTimeout(fetchJobs, 2000);
     } catch (err) {
       console.error('Scoring failed:', err);
@@ -1939,33 +2118,15 @@ export default function App() {
               {activeView === 'settings' && 'Settings'}
             </h2>
 
-            {/* Actions */}
+            {/* Actions - Simplified to one main button */}
             <div className="flex items-center gap-2 ml-auto">
               <button
-                onClick={handleResearchJobs}
-                disabled={researching}
+                onClick={handleProcessEmails}
+                disabled={scanning}
                 className="flex items-center gap-2 px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px disabled:opacity-50 transition-all"
               >
-                <Sparkles size={16} className={researching ? 'animate-pulse' : ''} />
-                <span className="hidden lg:inline">{researching ? 'Researching...' : 'Research'}</span>
-              </button>
-
-              <button
-                onClick={handleScan}
-                disabled={scanning}
-                className="flex items-center gap-2 px-4 py-2 bg-transparent border border-copper text-copper rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/10 disabled:opacity-50 transition-all"
-              >
                 <RefreshCw size={16} className={scanning ? 'animate-spin' : ''} />
-                <span className="hidden md:inline">{scanning ? 'Scanning...' : 'Scan'}</span>
-              </button>
-
-              <button
-                onClick={handleScoreJobs}
-                disabled={scoring}
-                className="flex items-center gap-2 px-4 py-2 bg-transparent border border-copper text-copper rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/10 disabled:opacity-50 transition-all"
-              >
-                <Star size={16} className={scoring ? 'animate-spin' : ''} />
-                <span className="hidden md:inline">{scoring ? 'Scoring...' : 'Score'}</span>
+                <span>{scanning ? 'Processing...' : 'Process Emails'}</span>
               </button>
             </div>
           </div>
@@ -2907,13 +3068,16 @@ export default function App() {
 
                 {!debugResults && !debugScanning && (
                   <p className="text-sm text-slate">
-                    Click "Debug Scan" to fetch your 10 most recent emails and process them through
+                    Click "Debug Scan" to fetch your 40 most recent emails and process them through
                     the full pipeline with verbose logging. This helps diagnose classification,
                     company extraction, and scoring issues. A log file will be saved for review.
                   </p>
                 )}
               </div>
             </div>
+
+            {/* Operation Logs Section */}
+            <LogsViewer />
           </>
         )
           } />
