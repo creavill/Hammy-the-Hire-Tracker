@@ -111,6 +111,40 @@ function StatusDropdown({ status, onChange }) {
 }
 
 function ActivityTimeline({ activities, loading }) {
+  const [expandedId, setExpandedId] = useState(null);
+  const [fullEmails, setFullEmails] = useState({});
+  const [loadingEmail, setLoadingEmail] = useState(null);
+
+  const handleExpandEmail = async (activity) => {
+    if (expandedId === activity.id) {
+      setExpandedId(null);
+      return;
+    }
+
+    setExpandedId(activity.id);
+
+    // If we already have the full body in the activity or cached, use it
+    if (activity.full_body || fullEmails[activity.id]) {
+      return;
+    }
+
+    // Fetch full email from API
+    if (activity.id && activity.gmail_message_id) {
+      setLoadingEmail(activity.id);
+      try {
+        const res = await fetch(`/api/followups/${activity.id}/full-email`);
+        const data = await res.json();
+        if (data.full_body) {
+          setFullEmails(prev => ({ ...prev, [activity.id]: data.full_body }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch full email:', err);
+      } finally {
+        setLoadingEmail(null);
+      }
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -129,29 +163,85 @@ function ActivityTimeline({ activities, loading }) {
 
   return (
     <div className="space-y-3">
-      {activities.map((activity, index) => (
-        <div
-          key={index}
-          className="flex gap-3 p-3 bg-warm-gray/30 border-l-[3px] border-l-slate"
-        >
-          <Mail size={16} className="text-slate flex-shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-ink font-body truncate">{activity.subject}</p>
-            <p className="text-xs text-slate mt-1">{formatDate(activity.date)}</p>
+      {activities.map((activity, index) => {
+        const isExpanded = expandedId === activity.id;
+        const fullBody = activity.full_body || fullEmails[activity.id];
+        const canExpand = activity.id && (activity.gmail_message_id || activity.full_body || fullEmails[activity.id]);
+
+        return (
+          <div
+            key={activity.id || index}
+            className={`bg-warm-gray/30 border-l-[3px] ${
+              activity.classification === 'interview' ? 'border-l-patina' :
+              activity.classification === 'offer' ? 'border-l-copper' :
+              activity.classification === 'rejection' ? 'border-l-rust' :
+              'border-l-slate'
+            }`}
+          >
+            <div
+              className={`flex gap-3 p-3 ${canExpand ? 'cursor-pointer hover:bg-warm-gray/50' : ''}`}
+              onClick={() => canExpand && handleExpandEmail(activity)}
+            >
+              <Mail size={16} className="text-slate flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-ink font-body">{activity.subject}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-xs text-slate">{formatDate(activity.date)}</p>
+                  {activity.sender_email && (
+                    <p className="text-xs text-slate">from {activity.sender_email}</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {activity.classification && (
+                  <span className={`
+                    text-xs px-2 py-0.5 flex-shrink-0
+                    ${activity.classification === 'interview' ? 'bg-patina/10 text-patina' :
+                      activity.classification === 'offer' ? 'bg-copper/10 text-copper' :
+                      activity.classification === 'rejection' ? 'bg-rust/10 text-rust' :
+                      'bg-slate/10 text-slate'}
+                  `}>
+                    {activity.classification}
+                  </span>
+                )}
+                {canExpand && (
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Expanded email content */}
+            {isExpanded && (
+              <div className="px-3 pb-3 pt-0">
+                <div className="bg-parchment border border-warm-gray p-4 mt-2">
+                  {loadingEmail === activity.id ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 size={20} className="animate-spin text-copper" />
+                      <span className="ml-2 text-sm text-slate">Loading email...</span>
+                    </div>
+                  ) : fullBody ? (
+                    <div className="text-sm text-ink whitespace-pre-wrap font-body leading-relaxed">
+                      {fullBody}
+                    </div>
+                  ) : activity.snippet ? (
+                    <div className="text-sm text-ink whitespace-pre-wrap font-body leading-relaxed">
+                      {activity.snippet}
+                      <p className="text-xs text-slate mt-2 italic">
+                        Full email not available. Showing preview only.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate italic">No email content available</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-          {activity.classification && (
-            <span className={`
-              text-xs px-2 py-0.5 flex-shrink-0
-              ${activity.classification === 'interview' ? 'bg-patina/10 text-patina' :
-                activity.classification === 'offer' ? 'bg-copper/10 text-copper' :
-                activity.classification === 'rejection' ? 'bg-rust/10 text-rust' :
-                'bg-slate/10 text-slate'}
-            `}>
-              {activity.classification}
-            </span>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
