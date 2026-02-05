@@ -219,6 +219,27 @@ def test_classify_followup_email():
     classification = classify_followup_email(subject, snippet, body)
     assert classification == "rejection", "Should detect rejection from body text"
 
+    # Test rejection with "next steps" farewell should NOT be interview (Clerri case)
+    subject = "Thank You for Your Patience - Update on Your Application"
+    snippet = "Thank you so much for your patience while we worked through our hiring process"
+    body = (
+        "Unfortunately, we won't be moving forward with your application at this time. "
+        "We wish you all the best in your continued career search and next steps."
+    )
+    classification = classify_followup_email(subject, snippet, body)
+    assert (
+        classification == "rejection"
+    ), f"Rejection with 'next steps' farewell should be rejection, got '{classification}'"
+
+    # Test closed/cancelled position should be rejection (GDIT case)
+    subject = "Update Regarding GDIT RQ210383 Cloud Developer (AWS)"
+    snippet = "While your skills closely aligned with the roles we communicated to you"
+    body = "the opportunity we presented to you has been closed/cancelled"
+    classification = classify_followup_email(subject, snippet, body)
+    assert (
+        classification == "rejection"
+    ), f"Closed/cancelled position should be rejection, got '{classification}'"
+
 
 def test_extract_company_from_email():
     """Test company name extraction from email addresses."""

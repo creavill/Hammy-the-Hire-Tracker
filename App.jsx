@@ -1107,7 +1107,7 @@ export default function App() {
       const response = await fetch(`${API_BASE}/debug-scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count: 10, days_back: 7 }),
+        body: JSON.stringify({ count: 20, days_back: 7 }),
       });
       const data = await response.json();
       if (data.error) {
@@ -2369,7 +2369,7 @@ export default function App() {
                     className="flex items-center gap-2 px-4 py-2 bg-rust text-parchment text-sm uppercase tracking-wide font-semibold hover:bg-rust/90 disabled:opacity-50 transition-colors"
                   >
                     <RefreshCw size={16} className={debugScanning ? 'animate-spin' : ''} />
-                    {debugScanning ? 'Scanning...' : 'Debug Scan (Last 10 Emails)'}
+                    {debugScanning ? 'Scanning...' : 'Debug Scan (Last 20 Emails)'}
                   </button>
                   {debugResults && (
                     <button
