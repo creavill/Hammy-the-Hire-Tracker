@@ -21,7 +21,7 @@ import {
   Search,
   Building2,
   AlertTriangle,
-  UserSearch,
+  Users,
   Archive,
   Copy
 } from 'lucide-react';
@@ -661,7 +661,7 @@ export default function JobDetailPage() {
                 </>
               ) : (
                 <>
-                  <UserSearch size={16} />
+                  <Users size={16} />
                   Find Hiring Manager
                 </>
               )}
