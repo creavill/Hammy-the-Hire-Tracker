@@ -4636,4 +4636,685 @@ def register_routes(app):
             logger.error(f"Error testing AI provider: {e}")
             return jsonify({"success": False, "error": str(e), "message": "Test failed"}), 500
 
+    # ============================================================
+    # Analytics & Export Routes
+    # ============================================================
+
+    @app.route("/api/analytics")
+    def api_analytics():
+        """
+        Get comprehensive analytics for the job search.
+
+        Route: GET /api/analytics
+
+        Returns:
+            JSON with analytics including:
+            - funnel: Application funnel stats (applied → interview → offer)
+            - by_source: Stats broken down by job source
+            - by_resume: Stats by resume used
+            - response_rate: Overall response rate
+            - timeline: Applications over time
+            - rejections: Rejection stats
+        """
+        conn = get_db()
+        try:
+            # Get all jobs
+            jobs = [dict(row) for row in conn.execute(
+                "SELECT * FROM jobs WHERE is_filtered = 0 AND status != 'hidden'"
+            ).fetchall()]
+
+            # Get all followups
+            followups = [dict(row) for row in conn.execute(
+                "SELECT * FROM followups"
+            ).fetchall()]
+
+            # Get resumes
+            resumes = [dict(row) for row in conn.execute(
+                "SELECT resume_id, name, usage_count FROM resume_variants WHERE is_active = 1"
+            ).fetchall()]
+
+            # Calculate funnel stats
+            total = len(jobs)
+            new_count = len([j for j in jobs if j['status'] == 'new'])
+            interested = len([j for j in jobs if j['status'] == 'interested'])
+            applied = len([j for j in jobs if j['status'] == 'applied'])
+            interviewing = len([j for j in jobs if j['status'] == 'interviewing'])
+            offers = len([j for j in jobs if j['status'] == 'offer'])
+            rejected = len([j for j in jobs if j['status'] == 'rejected'])
+            passed = len([j for j in jobs if j['status'] == 'passed'])
+
+            # Calculate response rate (responses / applications)
+            applications_sent = applied + interviewing + offers + rejected
+            responses = interviewing + offers + rejected
+            response_rate = round((responses / applications_sent * 100) if applications_sent > 0 else 0, 1)
+
+            # Calculate interview rate
+            interview_rate = round((interviewing / applications_sent * 100) if applications_sent > 0 else 0, 1)
+
+            # Calculate offer rate
+            offer_rate = round((offers / applications_sent * 100) if applications_sent > 0 else 0, 1)
+
+            # Stats by source
+            sources = {}
+            for job in jobs:
+                src = job.get('source') or 'Unknown'
+                if src not in sources:
+                    sources[src] = {'total': 0, 'applied': 0, 'interviews': 0, 'offers': 0, 'rejected': 0}
+                sources[src]['total'] += 1
+                if job['status'] in ['applied', 'interviewing', 'offer', 'rejected']:
+                    sources[src]['applied'] += 1
+                if job['status'] == 'interviewing':
+                    sources[src]['interviews'] += 1
+                if job['status'] == 'offer':
+                    sources[src]['offers'] += 1
+                if job['status'] == 'rejected':
+                    sources[src]['rejected'] += 1
+
+            # Stats by resume
+            resume_stats = {}
+            for resume in resumes:
+                resume_stats[resume['resume_id']] = {
+                    'name': resume['name'],
+                    'usage_count': resume['usage_count'] or 0,
+                    'jobs_applied': 0,
+                    'interviews': 0,
+                    'offers': 0
+                }
+
+            for job in jobs:
+                rid = job.get('selected_resume_id') or job.get('recommended_resume_id')
+                if rid and rid in resume_stats:
+                    if job['status'] in ['applied', 'interviewing', 'offer', 'rejected']:
+                        resume_stats[rid]['jobs_applied'] += 1
+                    if job['status'] == 'interviewing':
+                        resume_stats[rid]['interviews'] += 1
+                    if job['status'] == 'offer':
+                        resume_stats[rid]['offers'] += 1
+
+            # Timeline - applications per week
+            from collections import defaultdict
+            weekly = defaultdict(int)
+            for job in jobs:
+                if job.get('applied_date') or (job['status'] in ['applied', 'interviewing', 'offer', 'rejected']):
+                    date_str = job.get('applied_date') or job.get('email_date') or job.get('created_at')
+                    if date_str:
+                        try:
+                            date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            week_start = date - timedelta(days=date.weekday())
+                            week_key = week_start.strftime('%Y-%m-%d')
+                            weekly[week_key] += 1
+                        except:
+                            pass
+
+            # Sort weekly and get last 12 weeks
+            sorted_weeks = sorted(weekly.items())[-12:]
+
+            # Followup stats by type
+            followup_types = {}
+            for f in followups:
+                ftype = f.get('type') or 'unknown'
+                followup_types[ftype] = followup_types.get(ftype, 0) + 1
+
+            return jsonify({
+                'funnel': {
+                    'total': total,
+                    'new': new_count,
+                    'interested': interested,
+                    'applied': applied,
+                    'interviewing': interviewing,
+                    'offers': offers,
+                    'rejected': rejected,
+                    'passed': passed
+                },
+                'rates': {
+                    'response_rate': response_rate,
+                    'interview_rate': interview_rate,
+                    'offer_rate': offer_rate,
+                    'applications_sent': applications_sent
+                },
+                'by_source': sources,
+                'by_resume': resume_stats,
+                'timeline': sorted_weeks,
+                'followup_types': followup_types,
+                'avg_score': round(sum(j.get('baseline_score') or 0 for j in jobs) / len(jobs), 1) if jobs else 0
+            })
+        except Exception as e:
+            logger.error(f"Error getting analytics: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            conn.close()
+
+    @app.route("/api/jobs/export-csv")
+    def api_export_csv():
+        """
+        Export all jobs to CSV format.
+
+        Route: GET /api/jobs/export-csv
+
+        Returns:
+            CSV file download with all job data
+        """
+        from flask import Response
+        import csv
+        import io
+
+        conn = get_db()
+        try:
+            jobs = [dict(row) for row in conn.execute(
+                """SELECT job_id, title, company, location, url, source, status,
+                          baseline_score, email_date, created_at, applied_date, notes
+                   FROM jobs WHERE is_filtered = 0 ORDER BY created_at DESC"""
+            ).fetchall()]
+
+            # Create CSV in memory
+            output = io.StringIO()
+            writer = csv.writer(output)
+
+            # Header row
+            writer.writerow([
+                'Job ID', 'Title', 'Company', 'Location', 'URL', 'Source',
+                'Status', 'Score', 'Email Date', 'Created', 'Applied Date', 'Notes'
+            ])
+
+            # Data rows
+            for job in jobs:
+                writer.writerow([
+                    job.get('job_id', ''),
+                    job.get('title', ''),
+                    job.get('company', ''),
+                    job.get('location', ''),
+                    job.get('url', ''),
+                    job.get('source', ''),
+                    job.get('status', ''),
+                    job.get('baseline_score', ''),
+                    job.get('email_date', ''),
+                    job.get('created_at', ''),
+                    job.get('applied_date', ''),
+                    job.get('notes', '')
+                ])
+
+            output.seek(0)
+            return Response(
+                output.getvalue(),
+                mimetype='text/csv',
+                headers={'Content-Disposition': f'attachment; filename=hammy_jobs_{datetime.now().strftime("%Y%m%d")}.csv'}
+            )
+        except Exception as e:
+            logger.error(f"Error exporting CSV: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            conn.close()
+
+    # ============================================================
+    # Bulk Actions Routes
+    # ============================================================
+
+    @app.route("/api/jobs/bulk-archive", methods=["POST"])
+    def api_bulk_archive():
+        """
+        Bulk archive jobs (mark as 'archived' status).
+
+        Route: POST /api/jobs/bulk-archive
+
+        Request Body:
+            job_ids (list): List of job IDs to archive
+            OR
+            criteria (dict): Criteria for auto-selection
+                - status: Archive all with this status (e.g., 'rejected')
+                - older_than_days: Archive jobs older than X days
+
+        Returns:
+            JSON: {success: true, archived_count: N}
+        """
+        data = request.get_json() or {}
+        job_ids = data.get('job_ids', [])
+        criteria = data.get('criteria', {})
+
+        conn = get_db()
+        try:
+            archived_count = 0
+
+            if job_ids:
+                # Archive specific jobs
+                placeholders = ','.join('?' * len(job_ids))
+                conn.execute(
+                    f"UPDATE jobs SET status = 'archived', updated_at = ? WHERE job_id IN ({placeholders})",
+                    [datetime.now().isoformat()] + job_ids
+                )
+                archived_count = len(job_ids)
+
+            elif criteria:
+                # Archive by criteria
+                query = "UPDATE jobs SET status = 'archived', updated_at = ? WHERE is_filtered = 0"
+                params = [datetime.now().isoformat()]
+
+                if criteria.get('status'):
+                    query += " AND status = ?"
+                    params.append(criteria['status'])
+
+                if criteria.get('older_than_days'):
+                    cutoff = (datetime.now() - timedelta(days=criteria['older_than_days'])).isoformat()
+                    query += " AND created_at < ?"
+                    params.append(cutoff)
+
+                result = conn.execute(query, params)
+                archived_count = result.rowcount
+
+            conn.commit()
+            return jsonify({'success': True, 'archived_count': archived_count})
+
+        except Exception as e:
+            logger.error(f"Error bulk archiving: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            conn.close()
+
+    @app.route("/api/jobs/<job_id>/archive", methods=["POST"])
+    def api_archive_job(job_id):
+        """
+        Archive a single job.
+
+        Route: POST /api/jobs/{job_id}/archive
+        """
+        conn = get_db()
+        try:
+            conn.execute(
+                "UPDATE jobs SET status = 'archived', updated_at = ? WHERE job_id = ?",
+                (datetime.now().isoformat(), job_id)
+            )
+            conn.commit()
+            return jsonify({'success': True})
+        except Exception as e:
+            logger.error(f"Error archiving job: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            conn.close()
+
+    # ============================================================
+    # Gmail Archive Routes
+    # ============================================================
+
+    @app.route("/api/gmail/archive-emails", methods=["POST"])
+    def api_gmail_archive():
+        """
+        Archive processed job-related emails in Gmail.
+
+        Route: POST /api/gmail/archive-emails
+
+        Request Body:
+            criteria (dict):
+                - type: 'rejections', 'old_alerts', 'all_processed'
+                - older_than_days: Only archive emails older than X days
+
+        Returns:
+            JSON: {success: true, archived_count: N}
+        """
+        data = request.get_json() or {}
+        criteria = data.get('criteria', {})
+        archive_type = criteria.get('type', 'rejections')
+        older_than_days = criteria.get('older_than_days', 30)
+
+        try:
+            service = get_gmail_service()
+            if not service:
+                return jsonify({'error': 'Gmail not connected'}), 400
+
+            archived_count = 0
+            cutoff_date = (datetime.now() - timedelta(days=older_than_days)).strftime('%Y/%m/%d')
+
+            # Build search query based on type
+            if archive_type == 'rejections':
+                # Search for rejection emails
+                query = f'(subject:(unfortunately OR "not moving forward" OR "position has been filled" OR "decided not to proceed")) before:{cutoff_date}'
+            elif archive_type == 'old_alerts':
+                # Search for old job alert emails
+                query = f'(from:(@linkedin.com OR @indeed.com OR @glassdoor.com OR @ziprecruiter.com) subject:(job OR jobs OR opportunity)) before:{cutoff_date}'
+            elif archive_type == 'all_processed':
+                # Get message IDs from our processed_emails table
+                conn = get_db()
+                processed = conn.execute(
+                    "SELECT gmail_message_id FROM processed_emails WHERE processed_at < ?",
+                    ((datetime.now() - timedelta(days=older_than_days)).isoformat(),)
+                ).fetchall()
+                conn.close()
+
+                # Archive each processed email
+                for row in processed:
+                    try:
+                        # Remove from inbox (archive)
+                        service.users().messages().modify(
+                            userId='me',
+                            id=row['gmail_message_id'],
+                            body={'removeLabelIds': ['INBOX']}
+                        ).execute()
+                        archived_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to archive email {row['gmail_message_id']}: {e}")
+
+                return jsonify({'success': True, 'archived_count': archived_count})
+            else:
+                return jsonify({'error': 'Invalid archive type'}), 400
+
+            # Search and archive
+            results = service.users().messages().list(
+                userId='me',
+                q=query,
+                maxResults=100
+            ).execute()
+
+            messages = results.get('messages', [])
+
+            for msg in messages:
+                try:
+                    service.users().messages().modify(
+                        userId='me',
+                        id=msg['id'],
+                        body={'removeLabelIds': ['INBOX']}
+                    ).execute()
+                    archived_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to archive email {msg['id']}: {e}")
+
+            return jsonify({'success': True, 'archived_count': archived_count})
+
+        except Exception as e:
+            logger.error(f"Error archiving Gmail: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    # ============================================================
+    # Email Templates Routes
+    # ============================================================
+
+    @app.route("/api/email-templates", methods=["GET"])
+    def api_get_email_templates():
+        """
+        Get all email templates.
+
+        Route: GET /api/email-templates
+
+        Returns:
+            JSON: {templates: [...]}
+        """
+        # Default templates if none exist
+        default_templates = [
+            {
+                'id': 'followup',
+                'name': 'Follow-up Email',
+                'subject': 'Following Up on My Application - {job_title}',
+                'body': '''Hi {hiring_manager},
+
+I hope this message finds you well. I wanted to follow up on my application for the {job_title} position at {company} that I submitted on {applied_date}.
+
+I remain very interested in this opportunity and believe my experience in {skills} would be valuable to your team.
+
+Would you be able to provide any updates on the status of my application or the timeline for next steps?
+
+Thank you for your time and consideration.
+
+Best regards,
+{your_name}'''
+            },
+            {
+                'id': 'thank_you',
+                'name': 'Thank You (Post-Interview)',
+                'subject': 'Thank You - {job_title} Interview',
+                'body': '''Dear {interviewer_name},
+
+Thank you so much for taking the time to speak with me today about the {job_title} position at {company}.
+
+I really enjoyed learning more about {topic_discussed} and am even more excited about the opportunity to contribute to your team.
+
+{specific_point_from_interview}
+
+Please don't hesitate to reach out if you need any additional information from me.
+
+Best regards,
+{your_name}'''
+            },
+            {
+                'id': 'withdrawal',
+                'name': 'Application Withdrawal',
+                'subject': 'Withdrawing Application - {job_title}',
+                'body': '''Dear {hiring_manager},
+
+I hope this message finds you well. I am writing to respectfully withdraw my application for the {job_title} position at {company}.
+
+After careful consideration, I have decided to pursue another opportunity that more closely aligns with my current career goals.
+
+I sincerely appreciate the time you and your team invested in reviewing my application and speaking with me about this role.
+
+I hope our paths may cross again in the future, and I wish you and {company} continued success.
+
+Best regards,
+{your_name}'''
+            },
+            {
+                'id': 'accept_offer',
+                'name': 'Accept Offer',
+                'subject': 'Accepting Offer - {job_title}',
+                'body': '''Dear {hiring_manager},
+
+I am thrilled to formally accept the offer for the {job_title} position at {company}. Thank you for this wonderful opportunity.
+
+As discussed, I understand that my starting salary will be {salary}, and my start date will be {start_date}.
+
+I am excited to join the team and contribute to {company}'s success. Please let me know if there are any documents or paperwork I should complete before my start date.
+
+Thank you again for this opportunity. I look forward to working with you and the team.
+
+Best regards,
+{your_name}'''
+            },
+            {
+                'id': 'networking',
+                'name': 'Networking/Informational Interview',
+                'subject': 'Seeking Career Advice - {your_field}',
+                'body': '''Hi {contact_name},
+
+I hope this message finds you well. My name is {your_name}, and I came across your profile while researching professionals in {industry}.
+
+I'm currently {your_situation} and am very interested in learning more about {topic_of_interest}. Your experience at {their_company} particularly caught my attention.
+
+Would you be open to a brief 15-20 minute call to share some insights about your career path? I would greatly value your perspective.
+
+Thank you for considering my request. I understand you're busy, so I appreciate any time you can spare.
+
+Best regards,
+{your_name}'''
+            }
+        ]
+
+        return jsonify({'templates': default_templates})
+
+    @app.route("/api/email-templates/generate", methods=["POST"])
+    def api_generate_email():
+        """
+        Generate a personalized email from a template using AI.
+
+        Route: POST /api/email-templates/generate
+
+        Request Body:
+            template_id (str): Template to use
+            job_id (str): Job to personalize for
+            variables (dict): Additional variables to fill in
+
+        Returns:
+            JSON: {subject: str, body: str}
+        """
+        data = request.get_json() or {}
+        template_id = data.get('template_id')
+        job_id = data.get('job_id')
+        variables = data.get('variables', {})
+
+        if not template_id:
+            return jsonify({'error': 'template_id required'}), 400
+
+        conn = get_db()
+        try:
+            # Get job details if provided
+            job = None
+            if job_id:
+                job = conn.execute(
+                    "SELECT * FROM jobs WHERE job_id = ?",
+                    (job_id,)
+                ).fetchone()
+                if job:
+                    job = dict(job)
+
+            # Get template
+            templates_response = api_get_email_templates()
+            templates = templates_response.get_json()['templates']
+            template = next((t for t in templates if t['id'] == template_id), None)
+
+            if not template:
+                return jsonify({'error': 'Template not found'}), 404
+
+            # Fill in variables
+            subject = template['subject']
+            body = template['body']
+
+            # Auto-fill from job
+            if job:
+                subject = subject.replace('{job_title}', job.get('title') or '')
+                subject = subject.replace('{company}', job.get('company') or '')
+                body = body.replace('{job_title}', job.get('title') or '')
+                body = body.replace('{company}', job.get('company') or '')
+                body = body.replace('{applied_date}', job.get('applied_date') or job.get('email_date') or '')
+
+            # Fill in provided variables
+            for key, value in variables.items():
+                subject = subject.replace(f'{{{key}}}', str(value))
+                body = body.replace(f'{{{key}}}', str(value))
+
+            return jsonify({
+                'subject': subject,
+                'body': body,
+                'template_name': template['name']
+            })
+
+        except Exception as e:
+            logger.error(f"Error generating email: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            conn.close()
+
+    # ============================================================
+    # Find Hiring Manager Routes
+    # ============================================================
+
+    @app.route("/api/jobs/<job_id>/find-hiring-manager", methods=["POST"])
+    def api_find_hiring_manager(job_id):
+        """
+        Use AI to help find the hiring manager for a job.
+
+        Route: POST /api/jobs/{job_id}/find-hiring-manager
+
+        Returns:
+            JSON with:
+            - suggestions: List of potential contacts with search strategies
+            - linkedin_search: Suggested LinkedIn search query
+            - tips: Tips for finding the right person
+        """
+        conn = get_db()
+        try:
+            job = conn.execute(
+                "SELECT * FROM jobs WHERE job_id = ?",
+                (job_id,)
+            ).fetchone()
+
+            if not job:
+                return jsonify({'error': 'Job not found'}), 404
+
+            job = dict(job)
+            company = job.get('company') or 'Unknown Company'
+            title = job.get('title') or 'Unknown Position'
+
+            # Generate AI suggestions for finding hiring manager
+            try:
+                client = anthropic.Anthropic()
+                response = client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=1000,
+                    messages=[{
+                        "role": "user",
+                        "content": f"""I'm applying for a {title} position at {company}. Help me identify who the hiring manager might be and how to find them.
+
+Please provide:
+1. The likely job titles of people who would be the hiring manager for this role (e.g., "Engineering Manager", "VP of Engineering")
+2. A LinkedIn search query I can use to find them
+3. Tips for identifying the right person
+4. A template for reaching out once I find them
+
+Format your response as JSON with these fields:
+- likely_titles: array of job titles
+- linkedin_search: string with search query
+- tips: array of tips
+- outreach_template: string with message template"""
+                    }]
+                )
+
+                # Parse AI response
+                response_text = response.content[0].text
+
+                # Try to extract JSON from the response
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', response_text)
+                if json_match:
+                    result = json.loads(json_match.group())
+                else:
+                    # Fallback with basic suggestions
+                    result = {
+                        'likely_titles': [
+                            f'{title.split()[0]} Manager',
+                            'Hiring Manager',
+                            'Talent Acquisition',
+                            'HR Manager'
+                        ],
+                        'linkedin_search': f'"{company}" hiring manager {title.split()[0]}',
+                        'tips': [
+                            'Look for people with "Manager" or "Director" in their title in the relevant department',
+                            'Check the company\'s LinkedIn page for employees',
+                            'Look at job posting for any mentioned contacts'
+                        ],
+                        'outreach_template': f'Hi [Name], I recently applied for the {title} position at {company} and wanted to connect...'
+                    }
+
+                return jsonify({
+                    'success': True,
+                    'company': company,
+                    'job_title': title,
+                    'suggestions': result
+                })
+
+            except Exception as ai_error:
+                logger.warning(f"AI hiring manager lookup failed: {ai_error}")
+                # Return basic suggestions without AI
+                return jsonify({
+                    'success': True,
+                    'company': company,
+                    'job_title': title,
+                    'suggestions': {
+                        'likely_titles': [
+                            'Hiring Manager',
+                            'Recruiter',
+                            'HR Manager',
+                            'Department Head'
+                        ],
+                        'linkedin_search': f'"{company}" recruiter OR "hiring manager"',
+                        'tips': [
+                            'Search LinkedIn for employees at the company',
+                            'Look for people in HR or Talent Acquisition',
+                            'Check the job posting for contact information',
+                            'Visit the company\'s careers page for recruiter contacts'
+                        ],
+                        'outreach_template': f'Hi, I recently applied for the {title} position at {company} and wanted to introduce myself and express my enthusiasm for the role.'
+                    }
+                })
+
+        except Exception as e:
+            logger.error(f"Error finding hiring manager: {e}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            conn.close()
+
     return app
