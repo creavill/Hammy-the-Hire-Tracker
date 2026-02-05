@@ -20,7 +20,10 @@ import {
   DollarSign,
   Search,
   Building2,
-  AlertTriangle
+  AlertTriangle,
+  Users,
+  Archive,
+  Copy
 } from 'lucide-react';
 
 const API_BASE = '/api';
@@ -166,6 +169,9 @@ export default function JobDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [enrichment, setEnrichment] = useState(null);
+  const [findingHM, setFindingHM] = useState(false);
+  const [hiringManagerInfo, setHiringManagerInfo] = useState(null);
+  const [archiving, setArchiving] = useState(false);
 
   const fetchJob = useCallback(async () => {
     setLoading(true);
@@ -287,6 +293,36 @@ export default function JobDetailPage() {
       console.error('Delete failed:', err);
       setDeleting(false);
     }
+  };
+
+  const handleArchive = async () => {
+    setArchiving(true);
+    try {
+      await fetch(`${API_BASE}/jobs/${jobId}/archive`, { method: 'POST' });
+      navigate('/');
+    } catch (err) {
+      console.error('Archive failed:', err);
+      setArchiving(false);
+    }
+  };
+
+  const handleFindHiringManager = async () => {
+    setFindingHM(true);
+    try {
+      const res = await fetch(`${API_BASE}/jobs/${jobId}/find-hiring-manager`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setHiringManagerInfo(data.suggestions);
+      }
+    } catch (err) {
+      console.error('Find hiring manager failed:', err);
+    } finally {
+      setFindingHM(false);
+    }
+  };
+
+  const handleCopyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
   };
 
   if (loading) {
@@ -614,6 +650,42 @@ export default function JobDetailPage() {
             )}
 
             <button
+              onClick={handleFindHiringManager}
+              disabled={findingHM}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-transparent border border-copper text-copper font-body uppercase tracking-wide text-sm hover:bg-copper/10 disabled:opacity-50 transition-colors"
+            >
+              {findingHM ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Finding...
+                </>
+              ) : (
+                <>
+                  <Users size={16} />
+                  Find Hiring Manager
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleArchive}
+              disabled={archiving}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-transparent border border-slate text-slate font-body uppercase tracking-wide text-sm hover:bg-slate/10 disabled:opacity-50 transition-colors"
+            >
+              {archiving ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Archiving...
+                </>
+              ) : (
+                <>
+                  <Archive size={16} />
+                  Archive Job
+                </>
+              )}
+            </button>
+
+            <button
               onClick={handleDelete}
               disabled={deleting}
               className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-rust/10 text-rust font-body uppercase tracking-wide text-sm hover:bg-rust/20 disabled:opacity-50 transition-colors"
@@ -631,6 +703,91 @@ export default function JobDetailPage() {
               )}
             </button>
           </div>
+
+          {/* Hiring Manager Info Card */}
+          {hiringManagerInfo && (
+            <div className="bg-parchment border border-warm-gray">
+              <div className="p-4 border-b border-warm-gray flex items-center justify-between">
+                <h2 className="font-body font-semibold text-ink uppercase tracking-wide text-sm">Hiring Manager Suggestions</h2>
+                <button
+                  onClick={() => setHiringManagerInfo(null)}
+                  className="text-slate hover:text-ink"
+                >
+                  <XCircle size={16} />
+                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                {/* Likely Titles */}
+                {hiringManagerInfo.likely_titles && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-slate uppercase tracking-wide mb-2">Likely Job Titles</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {hiringManagerInfo.likely_titles.map((title, i) => (
+                        <span key={i} className="px-2 py-1 bg-warm-gray/50 text-ink text-sm">{title}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* LinkedIn Search */}
+                {hiringManagerInfo.linkedin_search && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-slate uppercase tracking-wide mb-2">LinkedIn Search</h3>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 px-3 py-2 bg-warm-gray/30 text-sm text-ink">{hiringManagerInfo.linkedin_search}</code>
+                      <button
+                        onClick={() => handleCopyToClipboard(hiringManagerInfo.linkedin_search)}
+                        className="p-2 text-copper hover:text-copper/80"
+                        title="Copy"
+                      >
+                        <Copy size={16} />
+                      </button>
+                      <a
+                        href={`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(hiringManagerInfo.linkedin_search)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 text-copper hover:text-copper/80"
+                        title="Search on LinkedIn"
+                      >
+                        <ExternalLink size={16} />
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tips */}
+                {hiringManagerInfo.tips && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-slate uppercase tracking-wide mb-2">Tips</h3>
+                    <ul className="space-y-1 text-sm text-ink">
+                      {hiringManagerInfo.tips.map((tip, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="text-copper">•</span>
+                          {tip}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Outreach Template */}
+                {hiringManagerInfo.outreach_template && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-xs font-semibold text-slate uppercase tracking-wide">Outreach Template</h3>
+                      <button
+                        onClick={() => handleCopyToClipboard(hiringManagerInfo.outreach_template)}
+                        className="text-xs text-copper hover:text-copper/80 flex items-center gap-1"
+                      >
+                        <Copy size={12} /> Copy
+                      </button>
+                    </div>
+                    <p className="px-3 py-2 bg-warm-gray/30 text-sm text-ink whitespace-pre-wrap">{hiringManagerInfo.outreach_template}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Notes Card */}
           <div className="bg-parchment border border-warm-gray">

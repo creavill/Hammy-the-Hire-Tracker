@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Search, RefreshCw, FileText, ExternalLink, ChevronDown, Filter, Briefcase, CheckCircle, XCircle, Clock, Star, Plus, Mail, Phone, User, Upload, Edit2, Trash2, Sparkles, AlertCircle, Menu, X, Settings, Building2, FileStack, Map } from 'lucide-react';
+import { Search, RefreshCw, FileText, ExternalLink, ChevronDown, Filter, Briefcase, CheckCircle, XCircle, Clock, Star, Plus, Mail, Phone, User, Upload, Edit2, Trash2, Sparkles, AlertCircle, Menu, X, Settings, Building2, FileStack, Map, BarChart3, Archive, Download, Copy, FileDown } from 'lucide-react';
 import JobRow from './components/JobRow.jsx';
 import JobDetailPage from './components/JobDetailPage.jsx';
 import ActionBanner from './components/ActionBanner.jsx';
@@ -11,8 +11,10 @@ import EmailSourcesSettings from './components/EmailSourcesSettings.jsx';
 function Sidebar({ activeView, setActiveView, counts, sidebarOpen, setSidebarOpen }) {
   const navItems = [
     { id: 'all_applications', label: 'Jobs', icon: Briefcase, count: counts.jobs },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3, count: null },
     { id: 'followups', label: 'Follow-ups', icon: Mail, count: null },
     { id: 'resumes', label: 'Resumes', icon: FileStack, count: counts.resumes },
+    { id: 'templates', label: 'Templates', icon: FileText, count: null },
     { id: 'companies', label: 'Companies', icon: Building2, count: counts.companies },
     { id: 'settings', label: 'Settings', icon: Settings, count: null },
   ];
@@ -857,6 +859,424 @@ function ExternalApplicationCard({ app, onStatusChange, expanded, onToggle, onDe
   );
 }
 
+// Analytics View Component
+function AnalyticsView() {
+  const [analytics, setAnalytics] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [archiving, setArchiving] = useState(false);
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, []);
+
+  const fetchAnalytics = async () => {
+    try {
+      const res = await fetch('/api/analytics');
+      const data = await res.json();
+      setAnalytics(data);
+    } catch (err) {
+      console.error('Failed to fetch analytics:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    window.location.href = '/api/jobs/export-csv';
+  };
+
+  const handleBulkArchive = async (criteria) => {
+    if (!confirm(`Archive all ${criteria.status} jobs${criteria.older_than_days ? ` older than ${criteria.older_than_days} days` : ''}?`)) {
+      return;
+    }
+    setArchiving(true);
+    try {
+      const res = await fetch('/api/jobs/bulk-archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ criteria })
+      });
+      const data = await res.json();
+      alert(`Archived ${data.archived_count} jobs`);
+      fetchAnalytics();
+    } catch (err) {
+      console.error('Bulk archive failed:', err);
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const handleGmailArchive = async (type) => {
+    if (!confirm(`Archive ${type} emails from Gmail?`)) return;
+    setArchiving(true);
+    try {
+      const res = await fetch('/api/gmail/archive-emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ criteria: { type, older_than_days: 30 } })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`Archived ${data.archived_count} emails from Gmail`);
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      console.error('Gmail archive failed:', err);
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw size={32} className="animate-spin text-copper" />
+      </div>
+    );
+  }
+
+  if (!analytics) {
+    return <div className="text-center text-slate">Failed to load analytics</div>;
+  }
+
+  const { funnel, rates, by_source, by_resume, timeline } = analytics;
+
+  return (
+    <div className="space-y-6">
+      {/* Quick Actions */}
+      <div className="bg-parchment border border-warm-gray p-4">
+        <h3 className="font-body font-semibold text-ink mb-3">Quick Actions</h3>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-3 py-2 bg-copper text-parchment text-sm uppercase tracking-wide font-semibold hover:bg-copper/90 transition-all"
+          >
+            <FileDown size={16} /> Export CSV
+          </button>
+          <button
+            onClick={() => handleBulkArchive({ status: 'rejected' })}
+            disabled={archiving}
+            className="flex items-center gap-2 px-3 py-2 border border-warm-gray text-ink text-sm uppercase tracking-wide font-semibold hover:bg-warm-gray/50 disabled:opacity-50 transition-all"
+          >
+            <Archive size={16} /> Archive Rejections
+          </button>
+          <button
+            onClick={() => handleBulkArchive({ status: 'passed' })}
+            disabled={archiving}
+            className="flex items-center gap-2 px-3 py-2 border border-warm-gray text-ink text-sm uppercase tracking-wide font-semibold hover:bg-warm-gray/50 disabled:opacity-50 transition-all"
+          >
+            <Archive size={16} /> Archive Passed
+          </button>
+          <button
+            onClick={() => handleGmailArchive('rejections')}
+            disabled={archiving}
+            className="flex items-center gap-2 px-3 py-2 border border-rust text-rust text-sm uppercase tracking-wide font-semibold hover:bg-rust/10 disabled:opacity-50 transition-all"
+          >
+            <Mail size={16} /> Archive Gmail Rejections
+          </button>
+          <button
+            onClick={() => handleGmailArchive('old_alerts')}
+            disabled={archiving}
+            className="flex items-center gap-2 px-3 py-2 border border-rust text-rust text-sm uppercase tracking-wide font-semibold hover:bg-rust/10 disabled:opacity-50 transition-all"
+          >
+            <Mail size={16} /> Archive Old Job Alerts
+          </button>
+        </div>
+      </div>
+
+      {/* Funnel Stats */}
+      <div className="bg-parchment border border-warm-gray p-4">
+        <h3 className="font-body font-semibold text-ink mb-3">Application Funnel</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {[
+            { label: 'Total', value: funnel.total, color: 'border-l-slate' },
+            { label: 'New', value: funnel.new, color: 'border-l-slate' },
+            { label: 'Interested', value: funnel.interested, color: 'border-l-copper' },
+            { label: 'Applied', value: funnel.applied, color: 'border-l-cream' },
+            { label: 'Interviewing', value: funnel.interviewing, color: 'border-l-patina' },
+            { label: 'Offers', value: funnel.offers, color: 'border-l-copper' },
+            { label: 'Rejected', value: funnel.rejected, color: 'border-l-rust' },
+            { label: 'Passed', value: funnel.passed, color: 'border-l-slate' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className={`border border-warm-gray border-l-[3px] ${color} p-3 text-center`}>
+              <div className="text-2xl font-mono font-bold text-ink">{value}</div>
+              <div className="text-xs text-slate uppercase tracking-wide">{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Key Rates */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-parchment border border-warm-gray border-l-[3px] border-l-patina p-4 text-center">
+          <div className="text-3xl font-mono font-bold text-patina">{rates.response_rate}%</div>
+          <div className="text-sm text-slate uppercase tracking-wide">Response Rate</div>
+          <div className="text-xs text-slate mt-1">({rates.applications_sent} applications)</div>
+        </div>
+        <div className="bg-parchment border border-warm-gray border-l-[3px] border-l-copper p-4 text-center">
+          <div className="text-3xl font-mono font-bold text-copper">{rates.interview_rate}%</div>
+          <div className="text-sm text-slate uppercase tracking-wide">Interview Rate</div>
+        </div>
+        <div className="bg-parchment border border-warm-gray border-l-[3px] border-l-cream p-4 text-center">
+          <div className="text-3xl font-mono font-bold text-ink">{rates.offer_rate}%</div>
+          <div className="text-sm text-slate uppercase tracking-wide">Offer Rate</div>
+        </div>
+      </div>
+
+      {/* By Source */}
+      <div className="bg-parchment border border-warm-gray p-4">
+        <h3 className="font-body font-semibold text-ink mb-3">By Source</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-warm-gray">
+                <th className="text-left py-2 text-slate uppercase tracking-wide text-xs">Source</th>
+                <th className="text-center py-2 text-slate uppercase tracking-wide text-xs">Total</th>
+                <th className="text-center py-2 text-slate uppercase tracking-wide text-xs">Applied</th>
+                <th className="text-center py-2 text-slate uppercase tracking-wide text-xs">Interviews</th>
+                <th className="text-center py-2 text-slate uppercase tracking-wide text-xs">Offers</th>
+                <th className="text-center py-2 text-slate uppercase tracking-wide text-xs">Rejected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(by_source).map(([source, stats]) => (
+                <tr key={source} className="border-b border-warm-gray/50">
+                  <td className="py-2 text-ink">{source}</td>
+                  <td className="text-center py-2 text-ink font-mono">{stats.total}</td>
+                  <td className="text-center py-2 text-ink font-mono">{stats.applied}</td>
+                  <td className="text-center py-2 text-patina font-mono">{stats.interviews}</td>
+                  <td className="text-center py-2 text-copper font-mono">{stats.offers}</td>
+                  <td className="text-center py-2 text-rust font-mono">{stats.rejected}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Resume Stats */}
+      {Object.keys(by_resume).length > 0 && (
+        <div className="bg-parchment border border-warm-gray p-4">
+          <h3 className="font-body font-semibold text-ink mb-3">Resume Performance</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Object.entries(by_resume).map(([id, stats]) => (
+              <div key={id} className="border border-warm-gray p-3">
+                <div className="font-semibold text-ink mb-2">{stats.name}</div>
+                <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                  <div>
+                    <div className="font-mono text-ink">{stats.jobs_applied}</div>
+                    <div className="text-xs text-slate">Applied</div>
+                  </div>
+                  <div>
+                    <div className="font-mono text-patina">{stats.interviews}</div>
+                    <div className="text-xs text-slate">Interviews</div>
+                  </div>
+                  <div>
+                    <div className="font-mono text-copper">{stats.offers}</div>
+                    <div className="text-xs text-slate">Offers</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Timeline */}
+      {timeline.length > 0 && (
+        <div className="bg-parchment border border-warm-gray p-4">
+          <h3 className="font-body font-semibold text-ink mb-3">Applications Over Time</h3>
+          <div className="flex items-end gap-1 h-32">
+            {timeline.map(([week, count]) => {
+              const maxCount = Math.max(...timeline.map(([, c]) => c));
+              const height = maxCount > 0 ? (count / maxCount) * 100 : 0;
+              return (
+                <div key={week} className="flex-1 flex flex-col items-center">
+                  <div
+                    className="w-full bg-copper rounded-t"
+                    style={{ height: `${height}%`, minHeight: count > 0 ? '4px' : '0' }}
+                    title={`${week}: ${count} applications`}
+                  />
+                  <div className="text-[10px] text-slate mt-1 rotate-45 origin-left">{week.slice(5)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Email Templates View Component
+function EmailTemplatesView() {
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [generatedEmail, setGeneratedEmail] = useState(null);
+  const [variables, setVariables] = useState({});
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, []);
+
+  const fetchTemplates = async () => {
+    try {
+      const res = await fetch('/api/email-templates');
+      const data = await res.json();
+      setTemplates(data.templates || []);
+    } catch (err) {
+      console.error('Failed to fetch templates:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateEmail = async () => {
+    if (!selectedTemplate) return;
+    try {
+      const res = await fetch('/api/email-templates/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_id: selectedTemplate.id,
+          variables
+        })
+      });
+      const data = await res.json();
+      setGeneratedEmail(data);
+    } catch (err) {
+      console.error('Failed to generate email:', err);
+    }
+  };
+
+  const handleCopy = (text) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Extract variable placeholders from template
+  const extractVariables = (template) => {
+    const regex = /\{([^}]+)\}/g;
+    const vars = new Set();
+    let match;
+    while ((match = regex.exec(template.subject + template.body)) !== null) {
+      vars.add(match[1]);
+    }
+    return Array.from(vars);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw size={32} className="animate-spin text-copper" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Template List */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {templates.map((template) => (
+          <div
+            key={template.id}
+            onClick={() => {
+              setSelectedTemplate(template);
+              setGeneratedEmail(null);
+              setVariables({});
+            }}
+            className={`bg-parchment border border-warm-gray p-4 cursor-pointer transition-all hover:border-copper ${
+              selectedTemplate?.id === template.id ? 'border-copper ring-1 ring-copper/20' : ''
+            }`}
+          >
+            <h3 className="font-body font-semibold text-ink mb-1">{template.name}</h3>
+            <p className="text-sm text-slate line-clamp-2">{template.subject}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Template Editor */}
+      {selectedTemplate && (
+        <div className="bg-parchment border border-warm-gray p-6">
+          <h3 className="font-body font-semibold text-ink mb-4">{selectedTemplate.name}</h3>
+
+          {/* Variables */}
+          <div className="mb-4">
+            <h4 className="text-sm font-semibold text-slate uppercase tracking-wide mb-2">Fill in Variables</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {extractVariables(selectedTemplate).map((varName) => (
+                <div key={varName}>
+                  <label className="block text-xs text-slate mb-1">{varName.replace(/_/g, ' ')}</label>
+                  <input
+                    type="text"
+                    value={variables[varName] || ''}
+                    onChange={(e) => setVariables({ ...variables, [varName]: e.target.value })}
+                    className="w-full px-3 py-2 border border-warm-gray bg-parchment text-ink text-sm focus:border-copper outline-none"
+                    placeholder={`Enter ${varName.replace(/_/g, ' ')}`}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={handleGenerateEmail}
+            className="flex items-center gap-2 px-4 py-2 bg-copper text-parchment text-sm uppercase tracking-wide font-semibold hover:bg-copper/90 transition-all"
+          >
+            <Sparkles size={16} /> Generate Email
+          </button>
+
+          {/* Generated Email Preview */}
+          {generatedEmail && (
+            <div className="mt-6 space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-slate uppercase tracking-wide">Subject</label>
+                  <button
+                    onClick={() => handleCopy(generatedEmail.subject)}
+                    className="text-xs text-copper hover:text-copper/80"
+                  >
+                    <Copy size={14} className="inline mr-1" /> Copy
+                  </button>
+                </div>
+                <div className="px-3 py-2 bg-warm-gray/30 border border-warm-gray text-ink">
+                  {generatedEmail.subject}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-slate uppercase tracking-wide">Body</label>
+                  <button
+                    onClick={() => handleCopy(generatedEmail.body)}
+                    className="text-xs text-copper hover:text-copper/80"
+                  >
+                    <Copy size={14} className="inline mr-1" /> {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                <div className="px-3 py-2 bg-warm-gray/30 border border-warm-gray text-ink whitespace-pre-wrap text-sm">
+                  {generatedEmail.body}
+                </div>
+              </div>
+
+              <button
+                onClick={() => handleCopy(`Subject: ${generatedEmail.subject}\n\n${generatedEmail.body}`)}
+                className="flex items-center gap-2 px-4 py-2 border border-copper text-copper text-sm uppercase tracking-wide font-semibold hover:bg-copper/10 transition-all"
+              >
+                <Copy size={16} /> Copy Full Email
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -1511,8 +1931,10 @@ export default function App() {
             {/* Page title */}
             <h2 className="font-display text-xl text-ink hidden sm:block">
               {activeView === 'all_applications' && 'Jobs'}
+              {activeView === 'analytics' && 'Analytics'}
               {activeView === 'followups' && 'Follow-ups'}
               {activeView === 'resumes' && 'Resume Library'}
+              {activeView === 'templates' && 'Email Templates'}
               {activeView === 'companies' && 'Tracked Companies'}
               {activeView === 'settings' && 'Settings'}
             </h2>
@@ -1789,6 +2211,10 @@ export default function App() {
               </p>
             </div>
           </>
+        ) : activeView === 'analytics' ? (
+          <AnalyticsView />
+        ) : activeView === 'templates' ? (
+          <EmailTemplatesView />
         ) : activeView === 'companies' ? (
           <>
             {/* Tracked Companies View */}
