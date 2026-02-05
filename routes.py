@@ -1666,9 +1666,9 @@ def register_routes(app):
             log(f"- {src['name']} ({source_id})", 1)
         log("")
 
-        # Fetch most recent emails (broad query)
+        # Fetch most recent emails (Primary tab only, skip Promotions/Social)
         queries = [
-            f"after:{after_date}",
+            f"category:primary after:{after_date}",
         ]
 
         all_msg_ids = []

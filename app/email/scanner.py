@@ -456,7 +456,9 @@ def _phase2_followups(
     for folder in ["INBOX", "[Gmail]/Spam"]:
         for query in followup_queries:
             try:
-                search_query = f"in:spam {query}" if folder == "[Gmail]/Spam" else query
+                search_query = (
+                    f"in:spam {query}" if folder == "[Gmail]/Spam" else f"category:primary {query}"
+                )
 
                 results = (
                     service.users()
@@ -609,7 +611,13 @@ def _phase3_discover_sources(
 
     for query in discovery_queries:
         try:
-            results = service.users().messages().list(userId="me", q=query, maxResults=30).execute()
+            primary_query = f"category:primary {query}"
+            results = (
+                service.users()
+                .messages()
+                .list(userId="me", q=primary_query, maxResults=30)
+                .execute()
+            )
             messages = results.get("messages", [])
 
             for msg_info in messages:
