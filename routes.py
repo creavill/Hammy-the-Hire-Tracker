@@ -1635,7 +1635,7 @@ def register_routes(app):
         from app.database import is_email_processed
 
         data = request.get_json() or {}
-        count = min(data.get("count", 20), 50)
+        count = min(data.get("count", 40), 100)
         days_back = data.get("days_back", 7)
 
         after_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y/%m/%d")

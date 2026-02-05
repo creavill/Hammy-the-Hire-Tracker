@@ -479,7 +479,7 @@ BUILTIN_EMAIL_SOURCES = [
     },
     {
         "name": "Indeed Job Alerts",
-        "sender_pattern": "@indeed.com,@indeedemail.com",
+        "sender_pattern": "@indeed.com,@indeedemail.com,@match.indeed.com",
         "subject_keywords": "job,jobs,hiring,new jobs",
         "category": "job_board",
         "parser_class": "app.parsers.indeed.IndeedParser",
