@@ -266,7 +266,14 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
 
           {/* Main info */}
           <div className="flex-1 min-w-0">
-            <h3 className="font-body font-semibold text-ink truncate">{job.title}</h3>
+            <div className="flex items-center gap-1.5">
+              <h3 className="font-body font-semibold text-ink truncate">{job.title}</h3>
+              {job.job_description && (
+                <span className="flex-shrink-0" title="Enriched with web search data">
+                  <Sparkles size={14} className="text-copper" />
+                </span>
+              )}
+            </div>
             <p className="text-slate text-sm">{job.company || 'Unknown Company'}</p>
             <p className="text-slate text-xs">{job.location || 'Location not specified'}</p>
           </div>
