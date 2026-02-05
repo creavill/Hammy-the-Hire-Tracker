@@ -170,7 +170,7 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
   const [loadingRecommendation, setLoadingRecommendation] = useState(false);
   const [notes, setNotes] = useState(job.notes || '');
   const [saveStatus, setSaveStatus] = useState(''); // 'saving' or 'saved'
-  const [jobDescription, setJobDescription] = useState(job.job_description || '');
+  const [jobDescription, setJobDescription] = useState(job.job_description || job.full_description || '');
   const [descriptionSaveStatus, setDescriptionSaveStatus] = useState(''); // '', 'saving', 'rescoring', 'saved'
 
   // Parse resume recommendation if available
@@ -268,7 +268,7 @@ function JobCard({ job, onStatusChange, onGenerateCoverLetter, onRecommendResume
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               <h3 className="font-body font-semibold text-ink truncate">{job.title}</h3>
-              {job.job_description && (
+              {(job.job_description || job.full_description) && (
                 <span className="flex-shrink-0" title="Enriched with web search data">
                   <Sparkles size={14} className="text-copper" />
                 </span>
