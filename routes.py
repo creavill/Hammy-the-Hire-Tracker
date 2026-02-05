@@ -22,7 +22,7 @@ from ai_analyzer import (
     analyze_job,
     generate_cover_letter,
     calculate_weighted_score,
-    generate_interview_answer
+    generate_interview_answer,
 )
 from gmail_scanner import scan_emails, scan_followup_emails
 from resume_manager import (
@@ -30,7 +30,7 @@ from resume_manager import (
     load_resumes_from_db,
     get_combined_resume_text,
     migrate_file_resumes_to_db,
-    recommend_resume_for_job
+    recommend_resume_for_job,
 )
 from database import get_db
 from parsers import fetch_wwr_jobs, generate_job_id, clean_job_url
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 CONFIG = get_config()
 
 # Dashboard HTML template
-DASHBOARD_HTML = '''
+DASHBOARD_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -550,21 +550,21 @@ DASHBOARD_HTML = '''
     </script>
 </body>
 </html>
-'''
+"""
 
 
 def register_routes(app):
     """
     Register all Flask routes with the app instance.
-    
+
     Args:
         app: Flask application instance
-        
+
     Returns:
         app: Flask application instance with routes registered
     """
-    
-    @app.route('/')
+
+    @app.route("/")
     def dashboard():
         """
         Serve the React frontend dashboard.
@@ -582,13 +582,13 @@ def register_routes(app):
             500: If frontend hasn't been built yet
         """
         # Serve the built React app from dist folder
-        dist_index = APP_DIR / 'dist' / 'index.html'
+        dist_index = APP_DIR / "dist" / "index.html"
         if dist_index.exists():
             return dist_index.read_text()
         else:
             return "Frontend not built! Run 'npm run build' first.", 500
 
-    @app.route('/api/jobs')
+    @app.route("/api/jobs")
     def get_jobs():
         """
         Retrieve jobs with filtering and weighted scoring.
@@ -612,9 +612,9 @@ def register_routes(app):
             GET /api/jobs?show_hidden=true
         """
         try:
-            status = request.args.get('status', '')
-            min_score = int(request.args.get('min_score', 0))
-            show_hidden = request.args.get('show_hidden', 'false') == 'true'
+            status = request.args.get("status", "")
+            min_score = int(request.args.get("min_score", 0))
+            show_hidden = request.args.get("show_hidden", "false") == "true"
 
             conn = get_db()
 
@@ -647,33 +647,41 @@ def register_routes(app):
 
             # Calculate weighted scores and sort
             for job in jobs:
-                job['weighted_score'] = calculate_weighted_score(
-                    job.get('baseline_score', 0),
-                    job.get('email_date', job.get('created_at', ''))
+                job["weighted_score"] = calculate_weighted_score(
+                    job.get("baseline_score", 0), job.get("email_date", job.get("created_at", ""))
                 )
 
-            jobs.sort(key=lambda x: x['weighted_score'], reverse=True)
+            jobs.sort(key=lambda x: x["weighted_score"], reverse=True)
 
             # Stats
-            all_jobs = [dict(row) for row in conn.execute("SELECT status, baseline_score FROM jobs WHERE is_filtered = 0 AND status != 'hidden'").fetchall()]
+            all_jobs = [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT status, baseline_score FROM jobs WHERE is_filtered = 0 AND status != 'hidden'"
+                ).fetchall()
+            ]
             stats = {
-                'total': len(all_jobs),
-                'new': len([j for j in all_jobs if j['status'] == 'new']),
-                'interested': len([j for j in all_jobs if j['status'] == 'interested']),
-                'applied': len([j for j in all_jobs if j['status'] == 'applied']),
-                'avg_score': sum(j['baseline_score'] or 0 for j in all_jobs) / len(all_jobs) if all_jobs else 0
+                "total": len(all_jobs),
+                "new": len([j for j in all_jobs if j["status"] == "new"]),
+                "interested": len([j for j in all_jobs if j["status"] == "interested"]),
+                "applied": len([j for j in all_jobs if j["status"] == "applied"]),
+                "avg_score": (
+                    sum(j["baseline_score"] or 0 for j in all_jobs) / len(all_jobs)
+                    if all_jobs
+                    else 0
+                ),
             }
 
             conn.close()
-            return jsonify({'jobs': jobs, 'stats': stats})
+            return jsonify({"jobs": jobs, "stats": stats})
         except ValueError as e:
             logger.error(f"❌ Invalid parameter in /api/jobs: {e}")
-            return jsonify({'error': 'Invalid parameters'}), 400
+            return jsonify({"error": "Invalid parameters"}), 400
         except Exception as e:
             logger.error(f"❌ Error in /api/jobs: {e}")
-            return jsonify({'error': 'Internal server error'}), 500
+            return jsonify({"error": "Internal server error"}), 500
 
-    @app.route('/api/jobs/<job_id>', methods=['GET'])
+    @app.route("/api/jobs/<job_id>", methods=["GET"])
     def get_job(job_id):
         """
         Get a single job by ID with all details.
@@ -694,25 +702,26 @@ def register_routes(app):
                 FROM jobs j
                 WHERE j.job_id = ?
                 """,
-                (job_id,)
+                (job_id,),
             ).fetchone()
 
             if job:
                 job_dict = dict(job)
                 # Parse analysis JSON if present
-                if job_dict.get('analysis'):
+                if job_dict.get("analysis"):
                     try:
                         import json
-                        job_dict['analysis'] = json.loads(job_dict['analysis'])
+
+                        job_dict["analysis"] = json.loads(job_dict["analysis"])
                     except:
                         pass
-                return jsonify({'job': job_dict})
+                return jsonify({"job": job_dict})
             else:
-                return jsonify({'error': 'Job not found'}), 404
+                return jsonify({"error": "Job not found"}), 404
         finally:
             conn.close()
 
-    @app.route('/api/jobs/<job_id>', methods=['PATCH'])
+    @app.route("/api/jobs/<job_id>", methods=["PATCH"])
     def update_job(job_id):
         """
         Update job fields (status, notes, viewed flag, etc.).
@@ -738,7 +747,7 @@ def register_routes(app):
         conn = get_db()
 
         # Build update query dynamically
-        allowed_fields = ['status', 'notes', 'viewed', 'applied_date', 'interview_date']
+        allowed_fields = ["status", "notes", "viewed", "applied_date", "interview_date"]
         updates = []
         params = []
 
@@ -756,19 +765,21 @@ def register_routes(app):
             conn.execute(query, params)
 
             # If status is being updated and this job is linked to an external application, sync it
-            if 'status' in data:
+            if "status" in data:
                 conn.execute(
                     "UPDATE external_applications SET status = ?, updated_at = ? WHERE job_id = ?",
-                    (data['status'], datetime.now().isoformat(), job_id)
+                    (data["status"], datetime.now().isoformat(), job_id),
                 )
-                logger.debug(f"[Backend] Synced status '{data['status']}' to linked external application")
+                logger.debug(
+                    f"[Backend] Synced status '{data['status']}' to linked external application"
+                )
 
             conn.commit()
 
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
-    @app.route('/api/jobs/<job_id>/description', methods=['PATCH'])
+    @app.route("/api/jobs/<job_id>/description", methods=["PATCH"])
     def update_job_description(job_id):
         """
         Update job description and automatically rescore the job.
@@ -788,26 +799,29 @@ def register_routes(app):
             }
         """
         data = request.json
-        job_description = data.get('job_description', '').strip()
+        job_description = data.get("job_description", "").strip()
 
         if not job_description:
-            return jsonify({'error': 'Job description cannot be empty'}), 400
+            return jsonify({"error": "Job description cannot be empty"}), 400
 
         conn = get_db()
 
         # Update the job description
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE jobs
             SET job_description = ?, updated_at = ?
             WHERE job_id = ?
-        """, (job_description, datetime.now().isoformat(), job_id))
+        """,
+            (job_description, datetime.now().isoformat(), job_id),
+        )
 
         # Get the updated job
         job = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
 
         if not job:
             conn.close()
-            return jsonify({'error': 'Job not found'}), 404
+            return jsonify({"error": "Job not found"}), 404
 
         # Auto-rescore with the new description
         try:
@@ -818,31 +832,36 @@ def register_routes(app):
 
             if analysis_result:
                 # Update with new analysis
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE jobs
                     SET analysis = ?,
                         updated_at = ?
                     WHERE job_id = ?
-                """, (json.dumps(analysis_result), datetime.now().isoformat(), job_id))
+                """,
+                    (json.dumps(analysis_result), datetime.now().isoformat(), job_id),
+                )
 
                 conn.commit()
                 conn.close()
 
-                return jsonify({
-                    'success': True,
-                    'new_score': analysis_result.get('qualification_score', 0),
-                    'analysis': analysis_result
-                })
+                return jsonify(
+                    {
+                        "success": True,
+                        "new_score": analysis_result.get("qualification_score", 0),
+                        "analysis": analysis_result,
+                    }
+                )
             else:
                 conn.close()
-                return jsonify({'error': 'Failed to analyze job'}), 500
+                return jsonify({"error": "Failed to analyze job"}), 500
 
         except Exception as e:
             logger.error(f"Error rescoring job: {e}")
             conn.close()
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/jobs/<job_id>', methods=['DELETE'])
+    @app.route("/api/jobs/<job_id>", methods=["DELETE"])
     def delete_job(job_id):
         """
         Delete a job and all associated data.
@@ -852,15 +871,26 @@ def register_routes(app):
         conn = get_db()
 
         # Get the job details before deleting
-        job = conn.execute("SELECT title, company, url FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        job = conn.execute(
+            "SELECT title, company, url FROM jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()
 
-        if job and job['url']:
+        if job and job["url"]:
             # Track this deletion to prevent re-scanning
             try:
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT OR REPLACE INTO deleted_jobs (job_url, title, company, deleted_at, deleted_reason)
                     VALUES (?, ?, ?, ?, ?)
-                """, (job['url'], job['title'], job['company'], datetime.now().isoformat(), 'user_deleted'))
+                """,
+                    (
+                        job["url"],
+                        job["title"],
+                        job["company"],
+                        datetime.now().isoformat(),
+                        "user_deleted",
+                    ),
+                )
             except Exception as e:
                 logger.warning(f"Failed to track deleted job: {e}")
 
@@ -876,9 +906,9 @@ def register_routes(app):
         conn.commit()
         conn.close()
 
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
-    @app.route('/api/scan', methods=['POST'])
+    @app.route("/api/scan", methods=["POST"])
     def api_scan():
         """
         Scan Gmail for job alerts with AI filtering.
@@ -909,31 +939,39 @@ def register_routes(app):
         """
         jobs = scan_emails()
         resume_text = load_resumes()
-    
+
         if not resume_text:
-            return jsonify({'error': 'No resumes found. Add .txt/.md files to resumes/ folder'}), 400
-    
+            return (
+                jsonify({"error": "No resumes found. Add .txt/.md files to resumes/ folder"}),
+                400,
+            )
+
         conn = get_db()
         new_count = 0
         filtered_count = 0
         duplicate_count = 0
-    
+
         try:
             for job in jobs:
                 # Check if job already exists in DB (by job_id, URL, or company+title)
-                existing = conn.execute("""
+                existing = conn.execute(
+                    """
                     SELECT 1 FROM jobs
                     WHERE job_id = ?
                     OR url = ?
                     OR (company = ? AND title = ?)
-                """, (job['job_id'], job['url'], job['company'], job['title'])).fetchone()
+                """,
+                    (job["job_id"], job["url"], job["company"], job["title"]),
+                ).fetchone()
                 if existing:
                     duplicate_count += 1
                     logger.info(f"⏭️  Skipping duplicate: {job['title'][:50]}")
                     continue
 
                 # Check if this job was previously deleted
-                deleted_check = conn.execute("SELECT id FROM deleted_jobs WHERE job_url = ?", (job['url'],)).fetchone()
+                deleted_check = conn.execute(
+                    "SELECT id FROM deleted_jobs WHERE job_url = ?", (job["url"],)
+                ).fetchone()
                 if deleted_check:
                     logger.debug(f"⏭️  Skipping previously deleted job: {job['title'][:50]}")
                     continue
@@ -942,25 +980,52 @@ def register_routes(app):
                 keep, baseline_score, reason = ai_filter_and_score(job, resume_text)
 
                 if keep:
-                    conn.execute('''
+                    conn.execute(
+                        """
                         INSERT INTO jobs (job_id, title, company, location, url, source, raw_text,
                                          baseline_score, created_at, updated_at, email_date, is_filtered)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                    ''', (job['job_id'], job['title'], job['company'], job['location'],
-                          job['url'], job['source'], job['raw_text'], baseline_score,
-                          job['created_at'], datetime.now().isoformat(), job.get('email_date', job['created_at'])))
+                    """,
+                        (
+                            job["job_id"],
+                            job["title"],
+                            job["company"],
+                            job["location"],
+                            job["url"],
+                            job["source"],
+                            job["raw_text"],
+                            baseline_score,
+                            job["created_at"],
+                            datetime.now().isoformat(),
+                            job.get("email_date", job["created_at"]),
+                        ),
+                    )
                     conn.commit()  # Commit immediately
                     new_count += 1
                     logger.info(f"✓ Kept: {job['title'][:50]} - Score {baseline_score} - {reason}")
                 else:
                     # Store filtered jobs but mark them
-                    conn.execute('''
+                    conn.execute(
+                        """
                         INSERT INTO jobs (job_id, title, company, location, url, source, raw_text,
                                          baseline_score, created_at, updated_at, email_date, is_filtered, notes)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-                    ''', (job['job_id'], job['title'], job['company'], job['location'],
-                          job['url'], job['source'], job['raw_text'], baseline_score,
-                          job['created_at'], datetime.now().isoformat(), job.get('email_date', job['created_at']), reason))
+                    """,
+                        (
+                            job["job_id"],
+                            job["title"],
+                            job["company"],
+                            job["location"],
+                            job["url"],
+                            job["source"],
+                            job["raw_text"],
+                            baseline_score,
+                            job["created_at"],
+                            datetime.now().isoformat(),
+                            job.get("email_date", job["created_at"]),
+                            reason,
+                        ),
+                    )
                     conn.commit()  # Commit immediately
                     filtered_count += 1
                     logger.info(f"✗ Filtered: {job['title'][:50]} - {reason}")
@@ -972,15 +1037,17 @@ def register_routes(app):
         logger.info(f"   - New & kept: {new_count}")
         logger.info(f"   - Filtered: {filtered_count}")
         logger.info(f"   - Duplicates skipped: {duplicate_count}")
-    
-        return jsonify({
-            'found': len(jobs), 
-            'new': new_count, 
-            'filtered': filtered_count,
-            'duplicates': duplicate_count
-        })
 
-    @app.route('/api/analyze', methods=['POST'])
+        return jsonify(
+            {
+                "found": len(jobs),
+                "new": new_count,
+                "filtered": filtered_count,
+                "duplicates": duplicate_count,
+            }
+        )
+
+    @app.route("/api/analyze", methods=["POST"])
     def api_analyze():
         """
         Run full AI analysis on unanalyzed jobs.
@@ -1009,34 +1076,41 @@ def register_routes(app):
         """
         resume_text = load_resumes()
         if not resume_text:
-            return jsonify({'error': 'No resumes found'}), 400
-    
+            return jsonify({"error": "No resumes found"}), 400
+
         conn = get_db()
-        jobs = [dict(row) for row in conn.execute(
-            "SELECT * FROM jobs WHERE is_filtered = 0 AND (score = 0 OR score IS NULL)"
-        ).fetchall()]
-    
+        jobs = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT * FROM jobs WHERE is_filtered = 0 AND (score = 0 OR score IS NULL)"
+            ).fetchall()
+        ]
+
         for job in jobs:
             logger.info(f"Analyzing: {job['title']}")
             analysis = analyze_job(job, resume_text)
-        
+
             # Only change status if it's still 'new', otherwise preserve user's choice
-            new_status = job['status']
-            if job['status'] == 'new':
-                new_status = 'interested' if analysis.get('should_apply') else 'new'
-        
+            new_status = job["status"]
+            if job["status"] == "new":
+                new_status = "interested" if analysis.get("should_apply") else "new"
+
             conn.execute(
                 "UPDATE jobs SET score = ?, analysis = ?, status = ?, updated_at = ? WHERE job_id = ?",
-                (analysis.get('qualification_score', 0), json.dumps(analysis),
-                 new_status,
-                 datetime.now().isoformat(), job['job_id'])
+                (
+                    analysis.get("qualification_score", 0),
+                    json.dumps(analysis),
+                    new_status,
+                    datetime.now().isoformat(),
+                    job["job_id"],
+                ),
             )
             conn.commit()
-    
-        conn.close()
-        return jsonify({'analyzed': len(jobs)})
 
-    @app.route('/api/score-jobs', methods=['POST'])
+        conn.close()
+        return jsonify({"analyzed": len(jobs)})
+
+    @app.route("/api/score-jobs", methods=["POST"])
     def api_score_jobs():
         """
         Re-score existing jobs that lack baseline scores.
@@ -1064,13 +1138,16 @@ def register_routes(app):
         """
         resume_text = load_resumes()
         if not resume_text:
-            return jsonify({'error': 'No resumes found'}), 400
+            return jsonify({"error": "No resumes found"}), 400
 
         conn = get_db()
         # Get jobs that don't have scores yet
-        jobs = [dict(row) for row in conn.execute(
-            "SELECT * FROM jobs WHERE (score = 0 OR score IS NULL) AND is_filtered = 0"
-        ).fetchall()]
+        jobs = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT * FROM jobs WHERE (score = 0 OR score IS NULL) AND is_filtered = 0"
+            ).fetchall()
+        ]
 
         scored_count = 0
         for job in jobs:
@@ -1081,7 +1158,7 @@ def register_routes(app):
                 # Update job with new score
                 conn.execute(
                     "UPDATE jobs SET score = ?, notes = ?, updated_at = ? WHERE job_id = ?",
-                    (baseline_score, reason, datetime.now().isoformat(), job['job_id'])
+                    (baseline_score, reason, datetime.now().isoformat(), job["job_id"]),
                 )
                 conn.commit()
                 scored_count += 1
@@ -1091,9 +1168,9 @@ def register_routes(app):
                 continue
 
         conn.close()
-        return jsonify({'scored': scored_count, 'total': len(jobs)})
+        return jsonify({"scored": scored_count, "total": len(jobs)})
 
-    @app.route('/api/scan-followups', methods=['POST'])
+    @app.route("/api/scan-followups", methods=["POST"])
     def api_scan_followups():
         """
         Scan Gmail for application follow-up emails.
@@ -1136,16 +1213,15 @@ def register_routes(app):
         try:
             for followup in followups:
                 # Check if this follow-up already exists (by gmail_message_id or company+subject+date)
-                gmail_msg_id = followup.get('gmail_message_id')
+                gmail_msg_id = followup.get("gmail_message_id")
                 if gmail_msg_id:
                     existing = conn.execute(
-                        "SELECT id FROM followups WHERE gmail_message_id = ?",
-                        (gmail_msg_id,)
+                        "SELECT id FROM followups WHERE gmail_message_id = ?", (gmail_msg_id,)
                     ).fetchone()
                 else:
                     existing = conn.execute(
                         "SELECT id FROM followups WHERE company = ? AND subject = ? AND email_date = ?",
-                        (followup['company'], followup['subject'], followup['email_date'])
+                        (followup["company"], followup["subject"], followup["email_date"]),
                     ).fetchone()
 
                 if existing:
@@ -1153,47 +1229,56 @@ def register_routes(app):
 
                 # Insert follow-up into database with expanded fields
                 conn.execute(
-                    '''INSERT INTO followups (
+                    """INSERT INTO followups (
                         company, subject, type, snippet, email_date, job_id, created_at,
                         gmail_message_id, sender_email, ai_summary
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        followup['company'],
-                        followup['subject'],
-                        followup['type'],
-                        followup['snippet'],
-                        followup['email_date'],
-                        followup['job_id'],
+                        followup["company"],
+                        followup["subject"],
+                        followup["type"],
+                        followup["snippet"],
+                        followup["email_date"],
+                        followup["job_id"],
                         datetime.now().isoformat(),
-                        followup.get('gmail_message_id'),
-                        followup.get('sender_email'),
-                        f"{followup['type'].title()} from {followup['company']}" +
-                        (f" for {followup.get('role')}" if followup.get('role') else "")
-                    )
+                        followup.get("gmail_message_id"),
+                        followup.get("sender_email"),
+                        f"{followup['type'].title()} from {followup['company']}"
+                        + (f" for {followup.get('role')}" if followup.get("role") else ""),
+                    ),
                 )
                 conn.commit()
                 new_count += 1
 
                 # Auto-update job status if matched
-                if followup['job_id']:
-                    job = conn.execute("SELECT status FROM jobs WHERE job_id = ?", (followup['job_id'],)).fetchone()
+                if followup["job_id"]:
+                    job = conn.execute(
+                        "SELECT status FROM jobs WHERE job_id = ?", (followup["job_id"],)
+                    ).fetchone()
 
                     if job:
                         current_status = job[0]
                         new_status = current_status
 
                         # Update status based on follow-up type
-                        if followup['type'] == 'rejection' and current_status != 'rejected':
-                            new_status = 'rejected'
-                        elif followup['type'] == 'interview' and current_status not in ['interviewing', 'offered', 'accepted']:
-                            new_status = 'interviewing'
-                        elif followup['type'] == 'offer' and current_status not in ['offered', 'accepted']:
-                            new_status = 'offered'
+                        if followup["type"] == "rejection" and current_status != "rejected":
+                            new_status = "rejected"
+                        elif followup["type"] == "interview" and current_status not in [
+                            "interviewing",
+                            "offered",
+                            "accepted",
+                        ]:
+                            new_status = "interviewing"
+                        elif followup["type"] == "offer" and current_status not in [
+                            "offered",
+                            "accepted",
+                        ]:
+                            new_status = "offered"
 
                         if new_status != current_status:
                             conn.execute(
                                 "UPDATE jobs SET status = ?, updated_at = ? WHERE job_id = ?",
-                                (new_status, datetime.now().isoformat(), followup['job_id'])
+                                (new_status, datetime.now().isoformat(), followup["job_id"]),
                             )
                             conn.commit()
                             updated_jobs += 1
@@ -1202,13 +1287,9 @@ def register_routes(app):
         finally:
             conn.close()
 
-        return jsonify({
-            'found': len(followups),
-            'new': new_count,
-            'updated_jobs': updated_jobs
-        })
+        return jsonify({"found": len(followups), "new": new_count, "updated_jobs": updated_jobs})
 
-    @app.route('/api/followups', methods=['GET'])
+    @app.route("/api/followups", methods=["GET"])
     def api_get_followups():
         """
         Retrieve all follow-up emails with statistics.
@@ -1233,38 +1314,37 @@ def register_routes(app):
         """
         conn = get_db()
 
-        followups = conn.execute('''
+        followups = conn.execute("""
             SELECT f.*, j.title, j.company as job_company, j.url
             FROM followups f
             LEFT JOIN jobs j ON f.job_id = j.job_id
             ORDER BY f.email_date DESC
             LIMIT 100
-        ''').fetchall()
+        """).fetchall()
 
         # Calculate statistics
         stats = {
-            'total': len(followups),
-            'interviews': len([f for f in followups if f['type'] == 'interview']),
-            'rejections': len([f for f in followups if f['type'] == 'rejection']),
-            'offers': len([f for f in followups if f['type'] == 'offer']),
-            'assessments': len([f for f in followups if f['type'] == 'assessment']),
+            "total": len(followups),
+            "interviews": len([f for f in followups if f["type"] == "interview"]),
+            "rejections": len([f for f in followups if f["type"] == "rejection"]),
+            "offers": len([f for f in followups if f["type"] == "offer"]),
+            "assessments": len([f for f in followups if f["type"] == "assessment"]),
         }
 
         # Calculate response rate
-        applied_count = conn.execute("SELECT COUNT(*) FROM jobs WHERE status IN ('applied', 'interviewing', 'offered', 'rejected')").fetchone()[0]
+        applied_count = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE status IN ('applied', 'interviewing', 'offered', 'rejected')"
+        ).fetchone()[0]
         if applied_count > 0:
-            stats['response_rate'] = round((stats['total'] / applied_count) * 100, 1)
+            stats["response_rate"] = round((stats["total"] / applied_count) * 100, 1)
         else:
-            stats['response_rate'] = 0
+            stats["response_rate"] = 0
 
         conn.close()
 
-        return jsonify({
-            'followups': [dict(row) for row in followups],
-            'stats': stats
-        })
+        return jsonify({"followups": [dict(row) for row in followups], "stats": stats})
 
-    @app.route('/api/followups/actions', methods=['GET'])
+    @app.route("/api/followups/actions", methods=["GET"])
     def get_followup_actions():
         """
         Get followups that require action, sorted by deadline.
@@ -1277,21 +1357,18 @@ def register_routes(app):
             - count: Total number of pending actions
         """
         conn = get_db()
-        actions = conn.execute('''
+        actions = conn.execute("""
             SELECT f.*, j.title, j.company as job_company, j.url
             FROM followups f
             LEFT JOIN jobs j ON f.job_id = j.job_id
             WHERE f.action_required = 1
             ORDER BY f.action_deadline ASC, f.email_date DESC
-        ''').fetchall()
+        """).fetchall()
         conn.close()
 
-        return jsonify({
-            'actions': [dict(row) for row in actions],
-            'count': len(actions)
-        })
+        return jsonify({"actions": [dict(row) for row in actions], "count": len(actions)})
 
-    @app.route('/api/followups/<int:followup_id>/read', methods=['PATCH'])
+    @app.route("/api/followups/<int:followup_id>/read", methods=["PATCH"])
     def mark_followup_read(followup_id):
         """
         Mark a followup as read.
@@ -1302,15 +1379,12 @@ def register_routes(app):
             JSON with success status
         """
         conn = get_db()
-        conn.execute(
-            "UPDATE followups SET is_read = 1 WHERE id = ?",
-            (followup_id,)
-        )
+        conn.execute("UPDATE followups SET is_read = 1 WHERE id = ?", (followup_id,))
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
-    @app.route('/api/followups/<int:followup_id>/reclassify', methods=['PATCH'])
+    @app.route("/api/followups/<int:followup_id>/reclassify", methods=["PATCH"])
     def reclassify_followup(followup_id):
         """
         Reclassify a followup email type.
@@ -1324,25 +1398,22 @@ def register_routes(app):
             JSON with success status
         """
         data = request.json
-        new_type = data.get('type', '').strip()
+        new_type = data.get("type", "").strip()
 
         if not new_type:
-            return jsonify({'error': 'Type is required'}), 400
+            return jsonify({"error": "Type is required"}), 400
 
-        valid_types = ['interview', 'rejection', 'received', 'offer', 'assessment', 'update']
+        valid_types = ["interview", "rejection", "received", "offer", "assessment", "update"]
         if new_type not in valid_types:
-            return jsonify({'error': f'Invalid type. Must be one of: {valid_types}'}), 400
+            return jsonify({"error": f"Invalid type. Must be one of: {valid_types}"}), 400
 
         conn = get_db()
-        conn.execute(
-            "UPDATE followups SET type = ? WHERE id = ?",
-            (new_type, followup_id)
-        )
+        conn.execute("UPDATE followups SET type = ? WHERE id = ?", (new_type, followup_id))
         conn.commit()
         conn.close()
-        return jsonify({'success': True, 'type': new_type})
+        return jsonify({"success": True, "type": new_type})
 
-    @app.route('/api/jobs/<job_id>/cover-letter', methods=['POST'])
+    @app.route("/api/jobs/<job_id>/cover-letter", methods=["POST"])
     def api_cover_letter(job_id):
         """
         Generate tailored cover letter for a specific job.
@@ -1371,17 +1442,17 @@ def register_routes(app):
         resume_text = load_resumes()
         conn = get_db()
         job = dict(conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone())
-    
+
         cover_letter = generate_cover_letter(job, resume_text)
         conn.execute(
             "UPDATE jobs SET cover_letter = ?, updated_at = ? WHERE job_id = ?",
-            (cover_letter, datetime.now().isoformat(), job_id)
+            (cover_letter, datetime.now().isoformat(), job_id),
         )
         conn.commit()
         conn.close()
-        return jsonify({'cover_letter': cover_letter})
+        return jsonify({"cover_letter": cover_letter})
 
-    @app.route('/api/jobs/<job_id>/activity', methods=['GET'])
+    @app.route("/api/jobs/<job_id>/activity", methods=["GET"])
     def get_job_activity(job_id):
         """
         Get email activity timeline for a specific job.
@@ -1410,32 +1481,32 @@ def register_routes(app):
                 WHERE job_id = ?
                 ORDER BY email_date DESC
                 """,
-                (job_id,)
+                (job_id,),
             ).fetchall()
 
             activities = []
             for row in followups:
                 activity = dict(row)
                 # Normalize classification
-                classification = (activity.get('type') or '').lower()
-                if 'interview' in classification:
-                    activity['classification'] = 'interview'
-                elif 'offer' in classification:
-                    activity['classification'] = 'offer'
-                elif 'reject' in classification or 'declined' in classification:
-                    activity['classification'] = 'rejection'
+                classification = (activity.get("type") or "").lower()
+                if "interview" in classification:
+                    activity["classification"] = "interview"
+                elif "offer" in classification:
+                    activity["classification"] = "offer"
+                elif "reject" in classification or "declined" in classification:
+                    activity["classification"] = "rejection"
                 else:
-                    activity['classification'] = 'update'
+                    activity["classification"] = "update"
                 activities.append(activity)
 
-            return jsonify({'activities': activities})
+            return jsonify({"activities": activities})
         except Exception as e:
             logger.error(f"Error fetching job activity: {e}")
-            return jsonify({'activities': [], 'error': str(e)})
+            return jsonify({"activities": [], "error": str(e)})
         finally:
             conn.close()
 
-    @app.route('/api/capture', methods=['POST'])
+    @app.route("/api/capture", methods=["POST"])
     def api_capture():
         """
         Capture job from Chrome extension.
@@ -1471,63 +1542,81 @@ def register_routes(app):
             {"url": "linkedin.com/jobs/123", "title": "Engineer", "company": "Acme"}
         """
         data = request.json
-    
-        url = clean_job_url(data.get('url', ''))
-        title = data.get('title', '')
-        company = data.get('company', '')
-        location = data.get('location', 'Remote')
-        description = data.get('description', '')
-        source = data.get('source', 'extension')
-    
+
+        url = clean_job_url(data.get("url", ""))
+        title = data.get("title", "")
+        company = data.get("company", "")
+        location = data.get("location", "Remote")
+        description = data.get("description", "")
+        source = data.get("source", "extension")
+
         # Auto-detect source from URL
-        if 'linkedin.com' in url:
-            source = 'linkedin'
-        elif 'indeed.com' in url:
-            source = 'indeed'
-        elif 'weworkremotely.com' in url:
-            source = 'weworkremotely'
-    
+        if "linkedin.com" in url:
+            source = "linkedin"
+        elif "indeed.com" in url:
+            source = "indeed"
+        elif "weworkremotely.com" in url:
+            source = "weworkremotely"
+
         if not url or not title:
-            return jsonify({'error': 'url and title required'}), 400
-    
+            return jsonify({"error": "url and title required"}), 400
+
         job_id = generate_job_id(url, title, company)
-    
+
         conn = get_db()
         existing = conn.execute("SELECT 1 FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
-    
+
         if existing:
-            conn.execute('''
+            conn.execute(
+                """
                 UPDATE jobs SET description = ?, raw_text = ?, updated_at = ?
                 WHERE job_id = ? AND (description IS NULL OR description = '')
-            ''', (description[:5000], description[:2000], datetime.now().isoformat(), job_id))
+            """,
+                (description[:5000], description[:2000], datetime.now().isoformat(), job_id),
+            )
             conn.commit()
             conn.close()
-            return jsonify({'status': 'updated', 'job_id': job_id})
-    
+            return jsonify({"status": "updated", "job_id": job_id})
+
         # New job from extension - add with baseline score
         resume_text = load_resumes()
         baseline_score = 50  # Default
-    
+
         if resume_text:
             temp_job = {
-                'title': title, 'company': company, 'location': location,
-                'raw_text': description[:500] if description else title
+                "title": title,
+                "company": company,
+                "location": location,
+                "raw_text": description[:500] if description else title,
             }
             keep, baseline_score, reason = ai_filter_and_score(temp_job, resume_text)
-    
-        conn.execute('''
+
+        conn.execute(
+            """
             INSERT INTO jobs (job_id, title, company, location, url, source, description, raw_text, 
                              baseline_score, created_at, updated_at, is_filtered)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-        ''', (job_id, title[:200], company[:100], location[:100], url, source, 
-              description[:5000], description[:2000], baseline_score,
-              datetime.now().isoformat(), datetime.now().isoformat()))
+        """,
+            (
+                job_id,
+                title[:200],
+                company[:100],
+                location[:100],
+                url,
+                source,
+                description[:5000],
+                description[:2000],
+                baseline_score,
+                datetime.now().isoformat(),
+                datetime.now().isoformat(),
+            ),
+        )
         conn.commit()
         conn.close()
-    
-        return jsonify({'status': 'created', 'job_id': job_id, 'baseline_score': baseline_score})
 
-    @app.route('/api/analyze-instant', methods=['POST'])
+        return jsonify({"status": "created", "job_id": job_id, "baseline_score": baseline_score})
+
+    @app.route("/api/analyze-instant", methods=["POST"])
     def api_analyze_instant():
         """
         Instant job analysis for Chrome extension.
@@ -1563,20 +1652,20 @@ def register_routes(app):
             {"title": "Software Engineer", "company": "Acme", "description": "..."}
         """
         data = request.json
-    
-        title = data.get('title', '')
-        company = data.get('company', 'Unknown')
-        description = data.get('description', '')
-    
+
+        title = data.get("title", "")
+        company = data.get("company", "Unknown")
+        description = data.get("description", "")
+
         if not title or not description:
-            return jsonify({'error': 'title and description required'}), 400
-    
+            return jsonify({"error": "title and description required"}), 400
+
         resume_text = load_resumes()
         if not resume_text:
-            return jsonify({'error': 'No resumes found'}), 400
-    
+            return jsonify({"error": "No resumes found"}), 400
+
         client = anthropic.Anthropic()
-    
+
         prompt = f"""Analyze job fit with STRICT ACCURACY. Only mention roles/skills candidate ACTUALLY has.
 
     CANDIDATE'S RESUME:
@@ -1611,28 +1700,28 @@ def register_routes(app):
         "resume_to_use": "backend|cloud|fullstack"
     }}
     """
-    
+
         try:
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=1000,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
-        
+
             response_text = response.content[0].text
-            match = re.search(r'\{[\s\S]*\}', response_text)
-        
+            match = re.search(r"\{[\s\S]*\}", response_text)
+
             if match:
                 analysis = json.loads(match.group())
             else:
                 raise ValueError("No JSON in response")
-        
-            return jsonify({'analysis': analysis, 'job': {'title': title, 'company': company}})
-        
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
 
-    @app.route('/api/wwr', methods=['POST'])
+            return jsonify({"analysis": analysis, "job": {"title": title, "company": company}})
+
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/wwr", methods=["POST"])
     def api_scan_wwr():
         """
         Scan WeWorkRemotely RSS feeds with AI filtering.
@@ -1663,22 +1752,24 @@ def register_routes(app):
         logger.info("🌐 Starting WWR scan...")
         jobs = fetch_wwr_jobs()
         logger.info(f"📥 Fetched {len(jobs)} jobs from RSS feeds")
-    
+
         resume_text = load_resumes()
-    
+
         if not resume_text:
-            return jsonify({'error': 'No resumes found'}), 400
-    
+            return jsonify({"error": "No resumes found"}), 400
+
         conn = get_db()
         new_count = 0
         filtered_count = 0
         duplicate_count = 0
-    
+
         try:
             for i, job in enumerate(jobs, 1):
                 logger.info(f"Processing {i}/{len(jobs)}: {job['title'][:50]}...")
 
-                existing = conn.execute("SELECT 1 FROM jobs WHERE job_id = ?", (job['job_id'],)).fetchone()
+                existing = conn.execute(
+                    "SELECT 1 FROM jobs WHERE job_id = ?", (job["job_id"],)
+                ).fetchone()
                 if existing:
                     duplicate_count += 1
                     logger.info(f"  ⏭️  Duplicate")
@@ -1687,34 +1778,70 @@ def register_routes(app):
                 keep, baseline_score, reason = ai_filter_and_score(job, resume_text)
 
                 if keep:
-                    conn.execute('''
+                    conn.execute(
+                        """
                         INSERT INTO jobs (job_id, title, company, location, url, source, raw_text,
                                          baseline_score, created_at, updated_at, email_date, is_filtered)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                    ''', (job['job_id'], job['title'], job['company'], job['location'],
-                          job['url'], job['source'], job.get('description', job['raw_text']), baseline_score,
-                          job['created_at'], datetime.now().isoformat(), job.get('email_date', job['created_at'])))
+                    """,
+                        (
+                            job["job_id"],
+                            job["title"],
+                            job["company"],
+                            job["location"],
+                            job["url"],
+                            job["source"],
+                            job.get("description", job["raw_text"]),
+                            baseline_score,
+                            job["created_at"],
+                            datetime.now().isoformat(),
+                            job.get("email_date", job["created_at"]),
+                        ),
+                    )
                     conn.commit()
                     new_count += 1
                     logger.info(f"  ✓ Kept - Score {baseline_score}")
                 else:
-                    conn.execute('''
+                    conn.execute(
+                        """
                         INSERT INTO jobs (job_id, title, company, location, url, source, raw_text,
                                          baseline_score, created_at, updated_at, email_date, is_filtered, notes)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-                    ''', (job['job_id'], job['title'], job['company'], job['location'],
-                          job['url'], job['source'], job.get('description', job['raw_text']), baseline_score,
-                          job['created_at'], datetime.now().isoformat(), job.get('email_date', job['created_at']), reason))
+                    """,
+                        (
+                            job["job_id"],
+                            job["title"],
+                            job["company"],
+                            job["location"],
+                            job["url"],
+                            job["source"],
+                            job.get("description", job["raw_text"]),
+                            baseline_score,
+                            job["created_at"],
+                            datetime.now().isoformat(),
+                            job.get("email_date", job["created_at"]),
+                            reason,
+                        ),
+                    )
                     conn.commit()
                     filtered_count += 1
                     logger.info(f"  ✗ Filtered - {reason[:50]}")
         finally:
             conn.close()
 
-        logger.info(f"\n✅ WWR Scan Complete: {new_count} new, {filtered_count} filtered, {duplicate_count} duplicates")
-        return jsonify({'found': len(jobs), 'new': new_count, 'filtered': filtered_count, 'duplicates': duplicate_count})
+        logger.info(
+            f"\n✅ WWR Scan Complete: {new_count} new, {filtered_count} filtered, {duplicate_count} duplicates"
+        )
+        return jsonify(
+            {
+                "found": len(jobs),
+                "new": new_count,
+                "filtered": filtered_count,
+                "duplicates": duplicate_count,
+            }
+        )
 
-    @app.route('/api/generate-cover-letter', methods=['POST'])
+    @app.route("/api/generate-cover-letter", methods=["POST"])
     def api_generate_cover_letter():
         """
         Generate cover letter from Chrome extension.
@@ -1749,17 +1876,17 @@ def register_routes(app):
             {"job": {...}, "analysis": {...}}
         """
         data = request.json
-        job = data.get('job', {})
-        analysis = data.get('analysis', {})
-    
+        job = data.get("job", {})
+        analysis = data.get("analysis", {})
+
         resume_text = load_resumes()
         if not resume_text:
-            return jsonify({'error': 'No resumes found'}), 400
-    
+            return jsonify({"error": "No resumes found"}), 400
+
         client = anthropic.Anthropic()
-    
-        strengths = ', '.join(analysis.get('strengths', []))
-    
+
+        strengths = ", ".join(analysis.get("strengths", []))
+
         prompt = f"""Write a tailored cover letter (3-4 paragraphs, under 350 words).
 
     CRITICAL: Only mention experience and skills the candidate ACTUALLY has from their resume.
@@ -1783,19 +1910,19 @@ def register_routes(app):
     5. 3-4 paragraphs: opening, 2 body (experience/fit), closing
 
     Write only the cover letter text (no subject line):"""
-    
+
         try:
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=1000,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
             cover_letter = response.content[0].text.strip()
-            return jsonify({'cover_letter': cover_letter})
+            return jsonify({"cover_letter": cover_letter})
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/generate-answer', methods=['POST'])
+    @app.route("/api/generate-answer", methods=["POST"])
     def api_generate_answer():
         """
         Generate interview answer using AI.
@@ -1826,19 +1953,19 @@ def register_routes(app):
             {"question": "Tell me about a time...", "job": {...}, "analysis": {...}}
         """
         data = request.json
-        job = data.get('job', {})
-        question = data.get('question')
-        analysis = data.get('analysis', {})
-    
+        job = data.get("job", {})
+        question = data.get("question")
+        analysis = data.get("analysis", {})
+
         if not question:
-            return jsonify({'error': 'Question required'}), 400
-    
+            return jsonify({"error": "Question required"}), 400
+
         resume_text = load_resumes()
         if not resume_text:
-            return jsonify({'error': 'No resumes found'}), 400
-    
+            return jsonify({"error": "No resumes found"}), 400
+
         client = anthropic.Anthropic()
-    
+
         prompt = f"""Generate a strong interview answer using ONLY actual resume content.
 
     QUESTION: {question}
@@ -1863,19 +1990,19 @@ def register_routes(app):
     5. Natural, conversational tone (not rehearsed)
 
     Generate 2-3 paragraph answer (150-200 words):"""
-    
+
         try:
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=800,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
             answer = response.content[0].text.strip()
-            return jsonify({'answer': answer})
+            return jsonify({"answer": answer})
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/watchlist', methods=['GET'])
+    @app.route("/api/watchlist", methods=["GET"])
     def get_watchlist():
         """
         Retrieve all watchlist companies.
@@ -1892,13 +2019,14 @@ def register_routes(app):
             GET /api/watchlist
         """
         conn = get_db()
-        items = [dict(row) for row in conn.execute(
-            "SELECT * FROM watchlist ORDER BY created_at DESC"
-        ).fetchall()]
+        items = [
+            dict(row)
+            for row in conn.execute("SELECT * FROM watchlist ORDER BY created_at DESC").fetchall()
+        ]
         conn.close()
-        return jsonify({'items': items})
+        return jsonify({"items": items})
 
-    @app.route('/api/watchlist', methods=['POST'])
+    @app.route("/api/watchlist", methods=["POST"])
     def add_watchlist():
         """
         Add company to watchlist.
@@ -1924,23 +2052,23 @@ def register_routes(app):
             {"company": "Acme Corp", "url": "acme.com/careers", "notes": "Check Q2"}
         """
         data = request.json
-        company = data.get('company', '').strip()
-        url = data.get('url', '').strip()
-        notes = data.get('notes', '').strip()
-    
+        company = data.get("company", "").strip()
+        url = data.get("url", "").strip()
+        notes = data.get("notes", "").strip()
+
         if not company:
-            return jsonify({'error': 'Company required'}), 400
-    
+            return jsonify({"error": "Company required"}), 400
+
         conn = get_db()
         conn.execute(
             "INSERT INTO watchlist (company, url, notes, created_at) VALUES (?, ?, ?, ?)",
-            (company, url, notes, datetime.now().isoformat())
+            (company, url, notes, datetime.now().isoformat()),
         )
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
-    @app.route('/api/watchlist/<int:watch_id>', methods=['DELETE'])
+    @app.route("/api/watchlist/<int:watch_id>", methods=["DELETE"])
     def delete_watchlist(watch_id):
         """
         Remove company from watchlist.
@@ -1957,30 +2085,33 @@ def register_routes(app):
         conn.execute("DELETE FROM watchlist WHERE id = ?", (watch_id,))
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
     # ============== Tracked Companies ==============
-    @app.route('/api/tracked-companies', methods=['GET'])
+    @app.route("/api/tracked-companies", methods=["GET"])
     def get_tracked_companies():
         """Get all tracked companies ordered by most recently added."""
         conn = get_db()
-        companies = [dict(row) for row in conn.execute(
-            "SELECT * FROM tracked_companies ORDER BY created_at DESC"
-        ).fetchall()]
+        companies = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT * FROM tracked_companies ORDER BY created_at DESC"
+            ).fetchall()
+        ]
         conn.close()
-        return jsonify({'companies': companies})
+        return jsonify({"companies": companies})
 
-    @app.route('/api/tracked-companies', methods=['POST'])
+    @app.route("/api/tracked-companies", methods=["POST"])
     def add_tracked_company():
         """Add a new tracked company."""
         data = request.json
-        company_name = data.get('company_name', '').strip()
-        career_page_url = data.get('career_page_url', '').strip()
-        job_alert_email = data.get('job_alert_email', '').strip()
-        notes = data.get('notes', '').strip()
+        company_name = data.get("company_name", "").strip()
+        career_page_url = data.get("career_page_url", "").strip()
+        job_alert_email = data.get("job_alert_email", "").strip()
+        notes = data.get("notes", "").strip()
 
         if not company_name:
-            return jsonify({'error': 'Company name is required'}), 400
+            return jsonify({"error": "Company name is required"}), 400
 
         conn = get_db()
         now = datetime.now().isoformat()
@@ -1988,23 +2119,23 @@ def register_routes(app):
             """INSERT INTO tracked_companies
                (company_name, career_page_url, job_alert_email, notes, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (company_name, career_page_url, job_alert_email, notes, now, now)
+            (company_name, career_page_url, job_alert_email, notes, now, now),
         )
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
-    @app.route('/api/tracked-companies/<int:company_id>', methods=['PATCH'])
+    @app.route("/api/tracked-companies/<int:company_id>", methods=["PATCH"])
     def update_tracked_company(company_id):
         """Update a tracked company."""
         data = request.json
-        company_name = data.get('company_name', '').strip()
-        career_page_url = data.get('career_page_url', '').strip()
-        job_alert_email = data.get('job_alert_email', '').strip()
-        notes = data.get('notes', '').strip()
+        company_name = data.get("company_name", "").strip()
+        career_page_url = data.get("career_page_url", "").strip()
+        job_alert_email = data.get("job_alert_email", "").strip()
+        notes = data.get("notes", "").strip()
 
         if not company_name:
-            return jsonify({'error': 'Company name is required'}), 400
+            return jsonify({"error": "Company name is required"}), 400
 
         conn = get_db()
         now = datetime.now().isoformat()
@@ -2012,23 +2143,23 @@ def register_routes(app):
             """UPDATE tracked_companies
                SET company_name = ?, career_page_url = ?, job_alert_email = ?, notes = ?, updated_at = ?
                WHERE id = ?""",
-            (company_name, career_page_url, job_alert_email, notes, now, company_id)
+            (company_name, career_page_url, job_alert_email, notes, now, company_id),
         )
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
-    @app.route('/api/tracked-companies/<int:company_id>', methods=['DELETE'])
+    @app.route("/api/tracked-companies/<int:company_id>", methods=["DELETE"])
     def delete_tracked_company(company_id):
         """Delete a tracked company."""
         conn = get_db()
         conn.execute("DELETE FROM tracked_companies WHERE id = ?", (company_id,))
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
     # ============== Email Sources (Built-in + Custom) ==============
-    @app.route('/api/email-sources', methods=['GET'])
+    @app.route("/api/email-sources", methods=["GET"])
     def get_email_sources():
         """
         Get all email sources (both built-in and custom).
@@ -2036,55 +2167,58 @@ def register_routes(app):
         Returns sources grouped by category with built-in sources first.
         """
         conn = get_db()
-        sources = [dict(row) for row in conn.execute(
-            """SELECT * FROM custom_email_sources
-               ORDER BY is_builtin DESC, category, name"""
-        ).fetchall()]
+        sources = [dict(row) for row in conn.execute("""SELECT * FROM custom_email_sources
+               ORDER BY is_builtin DESC, category, name""").fetchall()]
         conn.close()
 
         # Group by category
         categories = {}
         for source in sources:
-            cat = source.get('category', 'custom')
+            cat = source.get("category", "custom")
             if cat not in categories:
                 categories[cat] = []
             categories[cat].append(source)
 
-        return jsonify({
-            'sources': sources,
-            'categories': categories,
-            'total': len(sources),
-            'builtin_count': sum(1 for s in sources if s.get('is_builtin')),
-            'custom_count': sum(1 for s in sources if not s.get('is_builtin'))
-        })
+        return jsonify(
+            {
+                "sources": sources,
+                "categories": categories,
+                "total": len(sources),
+                "builtin_count": sum(1 for s in sources if s.get("is_builtin")),
+                "custom_count": sum(1 for s in sources if not s.get("is_builtin")),
+            }
+        )
 
     # Legacy endpoint for backwards compatibility
-    @app.route('/api/custom-email-sources', methods=['GET'])
+    @app.route("/api/custom-email-sources", methods=["GET"])
     def get_custom_email_sources():
         """Get all custom email sources (legacy endpoint)."""
         conn = get_db()
-        sources = [dict(row) for row in conn.execute(
-            "SELECT * FROM custom_email_sources ORDER BY is_builtin DESC, created_at DESC"
-        ).fetchall()]
+        sources = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT * FROM custom_email_sources ORDER BY is_builtin DESC, created_at DESC"
+            ).fetchall()
+        ]
         conn.close()
-        return jsonify({'sources': sources})
+        return jsonify({"sources": sources})
 
-    @app.route('/api/email-sources', methods=['POST'])
-    @app.route('/api/custom-email-sources', methods=['POST'])
+    @app.route("/api/email-sources", methods=["POST"])
+    @app.route("/api/custom-email-sources", methods=["POST"])
     def add_email_source():
         """Add a new custom email source."""
         data = request.json
-        name = data.get('name', '').strip()
-        sender_email = data.get('sender_email', '').strip()
-        sender_pattern = data.get('sender_pattern', '').strip()
-        subject_keywords = data.get('subject_keywords', '').strip()
-        category = data.get('category', 'custom').strip()
+        name = data.get("name", "").strip()
+        sender_email = data.get("sender_email", "").strip()
+        sender_pattern = data.get("sender_pattern", "").strip()
+        subject_keywords = data.get("subject_keywords", "").strip()
+        category = data.get("category", "custom").strip()
 
         if not name:
-            return jsonify({'error': 'Source name is required'}), 400
+            return jsonify({"error": "Source name is required"}), 400
 
         if not sender_email and not sender_pattern:
-            return jsonify({'error': 'Either sender email or pattern is required'}), 400
+            return jsonify({"error": "Either sender email or pattern is required"}), 400
 
         conn = get_db()
         now = datetime.now().isoformat()
@@ -2093,15 +2227,15 @@ def register_routes(app):
                (name, sender_email, sender_pattern, subject_keywords, category,
                 is_builtin, enabled, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?)""",
-            (name, sender_email, sender_pattern, subject_keywords, category, now, now)
+            (name, sender_email, sender_pattern, subject_keywords, category, now, now),
         )
         source_id = cursor.lastrowid
         conn.commit()
         conn.close()
-        return jsonify({'success': True, 'id': source_id})
+        return jsonify({"success": True, "id": source_id})
 
-    @app.route('/api/email-sources/<int:source_id>', methods=['PATCH'])
-    @app.route('/api/custom-email-sources/<int:source_id>', methods=['PATCH'])
+    @app.route("/api/email-sources/<int:source_id>", methods=["PATCH"])
+    @app.route("/api/custom-email-sources/<int:source_id>", methods=["PATCH"])
     def update_email_source(source_id):
         """Update an email source. Built-in sources can only toggle enabled."""
         data = request.json
@@ -2109,80 +2243,109 @@ def register_routes(app):
 
         # Check if it's a built-in source
         source = conn.execute(
-            "SELECT is_builtin FROM custom_email_sources WHERE id = ?",
-            (source_id,)
+            "SELECT is_builtin FROM custom_email_sources WHERE id = ?", (source_id,)
         ).fetchone()
 
         if not source:
             conn.close()
-            return jsonify({'error': 'Source not found'}), 404
+            return jsonify({"error": "Source not found"}), 404
 
         now = datetime.now().isoformat()
 
-        if source['is_builtin']:
-            # Built-in sources can only toggle enabled status
-            enabled = data.get('enabled', 1)
-            conn.execute(
-                "UPDATE custom_email_sources SET enabled = ?, updated_at = ? WHERE id = ?",
-                (enabled, now, source_id)
+        # Validate post_scan_action if provided (allowed for both built-in and custom)
+        post_scan_action = data.get("post_scan_action")
+        if post_scan_action is not None and post_scan_action not in ("none", "archive", "delete"):
+            conn.close()
+            return (
+                jsonify({"error": "Invalid post_scan_action. Must be: none, archive, delete"}),
+                400,
             )
+
+        if source["is_builtin"]:
+            # Built-in sources can toggle enabled and post_scan_action
+            enabled = data.get("enabled", 1)
+            if post_scan_action is not None:
+                conn.execute(
+                    "UPDATE custom_email_sources SET enabled = ?, post_scan_action = ?, updated_at = ? WHERE id = ?",
+                    (enabled, post_scan_action, now, source_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE custom_email_sources SET enabled = ?, updated_at = ? WHERE id = ?",
+                    (enabled, now, source_id),
+                )
         else:
             # Custom sources can be fully updated
-            name = data.get('name', '').strip()
-            sender_email = data.get('sender_email', '').strip()
-            sender_pattern = data.get('sender_pattern', '').strip()
-            subject_keywords = data.get('subject_keywords', '').strip()
-            enabled = data.get('enabled', 1)
-            category = data.get('category', 'custom').strip()
+            name = data.get("name", "").strip()
+            sender_email = data.get("sender_email", "").strip()
+            sender_pattern = data.get("sender_pattern", "").strip()
+            subject_keywords = data.get("subject_keywords", "").strip()
+            enabled = data.get("enabled", 1)
+            category = data.get("category", "custom").strip()
 
             if not name:
                 conn.close()
-                return jsonify({'error': 'Source name is required'}), 400
+                return jsonify({"error": "Source name is required"}), 400
 
             conn.execute(
                 """UPDATE custom_email_sources
                    SET name = ?, sender_email = ?, sender_pattern = ?,
-                       subject_keywords = ?, enabled = ?, category = ?, updated_at = ?
+                       subject_keywords = ?, enabled = ?, category = ?,
+                       post_scan_action = ?, updated_at = ?
                    WHERE id = ?""",
-                (name, sender_email, sender_pattern, subject_keywords, enabled, category, now, source_id)
+                (
+                    name,
+                    sender_email,
+                    sender_pattern,
+                    subject_keywords,
+                    enabled,
+                    category,
+                    post_scan_action or "none",
+                    now,
+                    source_id,
+                ),
             )
 
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
-    @app.route('/api/email-sources/<int:source_id>', methods=['DELETE'])
-    @app.route('/api/custom-email-sources/<int:source_id>', methods=['DELETE'])
+    @app.route("/api/email-sources/<int:source_id>", methods=["DELETE"])
+    @app.route("/api/custom-email-sources/<int:source_id>", methods=["DELETE"])
     def delete_email_source(source_id):
         """Delete a custom email source. Built-in sources cannot be deleted."""
         conn = get_db()
 
         # Check if it's a built-in source
         source = conn.execute(
-            "SELECT is_builtin, name FROM custom_email_sources WHERE id = ?",
-            (source_id,)
+            "SELECT is_builtin, name FROM custom_email_sources WHERE id = ?", (source_id,)
         ).fetchone()
 
         if not source:
             conn.close()
-            return jsonify({'error': 'Source not found'}), 404
+            return jsonify({"error": "Source not found"}), 404
 
-        if source['is_builtin']:
+        if source["is_builtin"]:
             conn.close()
-            return jsonify({
-                'error': f"Cannot delete built-in source '{source['name']}'. You can disable it instead."
-            }), 400
+            return (
+                jsonify(
+                    {
+                        "error": f"Cannot delete built-in source '{source['name']}'. You can disable it instead."
+                    }
+                ),
+                400,
+            )
 
         conn.execute("DELETE FROM custom_email_sources WHERE id = ?", (source_id,))
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
     # =========================================================================
     # SETTINGS ENDPOINTS
     # =========================================================================
 
-    @app.route('/api/settings', methods=['GET'])
+    @app.route("/api/settings", methods=["GET"])
     def get_settings():
         """
         Get current application settings and AI provider info.
@@ -2221,16 +2384,18 @@ def register_routes(app):
         followups_count = conn.execute("SELECT COUNT(*) FROM followups").fetchone()[0]
         conn.close()
 
-        return jsonify({
-            'ai_provider': provider_name,
-            'ai_model': model_name,
-            'available_providers': available,
-            'email_sources_count': email_sources_count,
-            'jobs_count': jobs_count,
-            'followups_count': followups_count
-        })
+        return jsonify(
+            {
+                "ai_provider": provider_name,
+                "ai_model": model_name,
+                "available_providers": available,
+                "email_sources_count": email_sources_count,
+                "jobs_count": jobs_count,
+                "followups_count": followups_count,
+            }
+        )
 
-    @app.route('/api/settings/test-provider', methods=['POST'])
+    @app.route("/api/settings/test-provider", methods=["POST"])
     def test_ai_provider():
         """
         Test AI provider connection with a simple query.
@@ -2253,27 +2418,26 @@ def register_routes(app):
             # Simple test: ask AI to respond with JSON
             test_result = provider.filter_and_score(
                 {
-                    'title': 'Test Job',
-                    'company': 'Test Company',
-                    'location': 'Remote',
-                    'raw_text': 'This is a test job posting.'
+                    "title": "Test Job",
+                    "company": "Test Company",
+                    "location": "Remote",
+                    "raw_text": "This is a test job posting.",
                 },
-                'Test resume with Python and JavaScript skills.'
+                "Test resume with Python and JavaScript skills.",
             )
 
-            return jsonify({
-                'success': True,
-                'provider': provider.provider_name,
-                'model': provider.model_name,
-                'response': test_result
-            })
+            return jsonify(
+                {
+                    "success": True,
+                    "provider": provider.provider_name,
+                    "model": provider.model_name,
+                    "response": test_result,
+                }
+            )
         except Exception as e:
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 500
+            return jsonify({"success": False, "error": str(e)}), 500
 
-    @app.route('/api/email-sources/test-pattern', methods=['POST'])
+    @app.route("/api/email-sources/test-pattern", methods=["POST"])
     def test_email_pattern():
         """
         Test an email source pattern against recent emails.
@@ -2292,13 +2456,13 @@ def register_routes(app):
         """
         try:
             data = request.get_json() or {}
-            sender_pattern = data.get('sender_pattern', '').strip().lower()
-            sender_email = data.get('sender_email', '').strip().lower()
-            subject_keywords = data.get('subject_keywords', '').strip().lower()
-            days_back = int(data.get('days_back', 7))
+            sender_pattern = data.get("sender_pattern", "").strip().lower()
+            sender_email = data.get("sender_email", "").strip().lower()
+            subject_keywords = data.get("subject_keywords", "").strip().lower()
+            days_back = int(data.get("days_back", 7))
 
             if not sender_pattern and not sender_email:
-                return jsonify({'error': 'Either sender_pattern or sender_email is required'}), 400
+                return jsonify({"error": "Either sender_pattern or sender_email is required"}), 400
 
             # Import email scanner
             from gmail_scanner import get_gmail_service, get_email_details, get_email_body
@@ -2306,51 +2470,58 @@ def register_routes(app):
 
             service = get_gmail_service()
             if not service:
-                return jsonify({'error': 'Gmail service not configured'}), 400
+                return jsonify({"error": "Gmail service not configured"}), 400
 
             # Build search query
-            after_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y/%m/%d')
-            query_parts = [f'after:{after_date}']
+            after_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y/%m/%d")
+            query_parts = [f"after:{after_date}"]
 
             if sender_email:
-                query_parts.append(f'from:{sender_email}')
+                query_parts.append(f"from:{sender_email}")
             elif sender_pattern:
                 # For patterns like "@linkedin.com", search for emails from that domain
-                if sender_pattern.startswith('@'):
-                    query_parts.append(f'from:*{sender_pattern}')
+                if sender_pattern.startswith("@"):
+                    query_parts.append(f"from:*{sender_pattern}")
                 else:
-                    query_parts.append(f'from:{sender_pattern}')
+                    query_parts.append(f"from:{sender_pattern}")
 
-            query = ' '.join(query_parts)
+            query = " ".join(query_parts)
             logger.info(f"Testing pattern with query: {query}")
 
             # Search for emails
-            results = service.users().messages().list(
-                userId='me',
-                q=query,
-                maxResults=50
-            ).execute()
+            results = service.users().messages().list(userId="me", q=query, maxResults=50).execute()
 
-            messages = results.get('messages', [])
+            messages = results.get("messages", [])
             matching_emails = []
             sample_subjects = []
             sample_senders = []
 
             # Process keywords if provided
-            keywords = [k.strip() for k in subject_keywords.split(',') if k.strip()] if subject_keywords else []
+            keywords = (
+                [k.strip() for k in subject_keywords.split(",") if k.strip()]
+                if subject_keywords
+                else []
+            )
 
             for msg_info in messages[:20]:  # Check up to 20 messages
                 try:
-                    msg = service.users().messages().get(
-                        userId='me',
-                        id=msg_info['id'],
-                        format='metadata',
-                        metadataHeaders=['Subject', 'From']
-                    ).execute()
+                    msg = (
+                        service.users()
+                        .messages()
+                        .get(
+                            userId="me",
+                            id=msg_info["id"],
+                            format="metadata",
+                            metadataHeaders=["Subject", "From"],
+                        )
+                        .execute()
+                    )
 
-                    headers = {h['name']: h['value'] for h in msg.get('payload', {}).get('headers', [])}
-                    subject = headers.get('Subject', '')
-                    sender = headers.get('From', '')
+                    headers = {
+                        h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])
+                    }
+                    subject = headers.get("Subject", "")
+                    sender = headers.get("From", "")
 
                     # If keywords provided, check if any match
                     if keywords:
@@ -2358,10 +2529,7 @@ def register_routes(app):
                         if not any(kw in subject_lower for kw in keywords):
                             continue
 
-                    matching_emails.append({
-                        'subject': subject,
-                        'sender': sender
-                    })
+                    matching_emails.append({"subject": subject, "sender": sender})
 
                     if subject and subject not in sample_subjects:
                         sample_subjects.append(subject[:100])
@@ -2372,43 +2540,47 @@ def register_routes(app):
                     logger.warning(f"Error processing test message: {e}")
                     continue
 
-            return jsonify({
-                'matches': len(matching_emails),
-                'total_found': len(messages),
-                'sample_subjects': sample_subjects[:5],
-                'sample_senders': list(set(sample_senders))[:5],
-                'query_used': query
-            })
+            return jsonify(
+                {
+                    "matches": len(matching_emails),
+                    "total_found": len(messages),
+                    "sample_subjects": sample_subjects[:5],
+                    "sample_senders": list(set(sample_senders))[:5],
+                    "query_used": query,
+                }
+            )
 
         except Exception as e:
             logger.error(f"Error testing email pattern: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
     # ============== External Applications ==============
-    @app.route('/api/external-applications', methods=['GET'])
+    @app.route("/api/external-applications", methods=["GET"])
     def get_external_applications():
         """
         Get all external applications with optional filtering.
         Query params: status, company, source
         """
-        logger.debug(f"[Backend] GET /api/external-applications - Query params: {dict(request.args)}")
+        logger.debug(
+            f"[Backend] GET /api/external-applications - Query params: {dict(request.args)}"
+        )
         conn = get_db()
 
         # Build query with optional filters
         query = "SELECT * FROM external_applications WHERE 1=1"
         params = []
 
-        if request.args.get('status'):
+        if request.args.get("status"):
             query += " AND status = ?"
-            params.append(request.args.get('status'))
+            params.append(request.args.get("status"))
 
-        if request.args.get('company'):
+        if request.args.get("company"):
             query += " AND company LIKE ?"
             params.append(f"%{request.args.get('company')}%")
 
-        if request.args.get('source'):
+        if request.args.get("source"):
             query += " AND source = ?"
-            params.append(request.args.get('source'))
+            params.append(request.args.get("source"))
 
         query += " ORDER BY applied_date DESC"
 
@@ -2416,9 +2588,9 @@ def register_routes(app):
         conn.close()
 
         logger.debug(f"[Backend] Returning {len(applications)} external applications")
-        return jsonify({'applications': applications})
+        return jsonify({"applications": applications})
 
-    @app.route('/api/external-applications', methods=['POST'])
+    @app.route("/api/external-applications", methods=["POST"])
     def create_external_application():
         """
         Create a new external application.
@@ -2432,11 +2604,11 @@ def register_routes(app):
         logger.debug(f"[Backend] POST /api/external-applications - Received data: {data}")
 
         # Validate required fields
-        required_fields = ['title', 'company', 'applied_date', 'source']
+        required_fields = ["title", "company", "applied_date", "source"]
         for field in required_fields:
             if not data.get(field):
                 logger.warning(f"[Backend] Validation failed: {field} is missing")
-                return jsonify({'error': f'{field} is required'}), 400
+                return jsonify({"error": f"{field} is required"}), 400
 
         # Generate unique IDs
         app_id = str(uuid.uuid4())[:16]
@@ -2444,14 +2616,14 @@ def register_routes(app):
         logger.debug(f"[Backend] Generated app_id: {app_id}, job_id: {job_id}")
 
         # Get optional fields
-        location = data.get('location', '')
-        url = data.get('url', '')
-        application_method = data.get('application_method', '')
-        contact_name = data.get('contact_name', '')
-        contact_email = data.get('contact_email', '')
-        status = data.get('status', 'applied')
-        follow_up_date = data.get('follow_up_date')
-        notes = data.get('notes', '')
+        location = data.get("location", "")
+        url = data.get("url", "")
+        application_method = data.get("application_method", "")
+        contact_name = data.get("contact_name", "")
+        contact_email = data.get("contact_email", "")
+        status = data.get("status", "applied")
+        follow_up_date = data.get("follow_up_date")
+        notes = data.get("notes", "")
 
         now = datetime.now().isoformat()
 
@@ -2460,60 +2632,86 @@ def register_routes(app):
 
             # First, create a job entry in the jobs table
             # This makes the external application show up in the main job list
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT INTO jobs (
                     job_id, title, company, location, url, source,
                     status, score, baseline_score, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                job_id, data['title'], data['company'], location, url,
-                f"external_{data['source']}", # Prefix source to identify it came from external tracking
-                'applied',  # Set status to 'applied' since this is an external application
-                0,  # Default score
-                0,  # Default baseline score
-                now, now
-            ))
+            """,
+                (
+                    job_id,
+                    data["title"],
+                    data["company"],
+                    location,
+                    url,
+                    f"external_{data['source']}",  # Prefix source to identify it came from external tracking
+                    "applied",  # Set status to 'applied' since this is an external application
+                    0,  # Default score
+                    0,  # Default baseline score
+                    now,
+                    now,
+                ),
+            )
             logger.debug(f"[Backend] Created job entry with job_id: {job_id}")
 
             # Then, create the external application entry linked to the job
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT INTO external_applications (
                     app_id, job_id, title, company, location, url, source,
                     application_method, applied_date, contact_name, contact_email,
                     status, follow_up_date, notes, created_at, updated_at, is_linked_to_job
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                app_id, job_id, data['title'], data['company'], location, url, data['source'],
-                application_method, data['applied_date'], contact_name, contact_email,
-                status, follow_up_date, notes, now, now, 1  # is_linked_to_job = 1
-            ))
+            """,
+                (
+                    app_id,
+                    job_id,
+                    data["title"],
+                    data["company"],
+                    location,
+                    url,
+                    data["source"],
+                    application_method,
+                    data["applied_date"],
+                    contact_name,
+                    contact_email,
+                    status,
+                    follow_up_date,
+                    notes,
+                    now,
+                    now,
+                    1,  # is_linked_to_job = 1
+                ),
+            )
             logger.debug(f"[Backend] Created external application entry linked to job_id: {job_id}")
 
             conn.commit()
             conn.close()
-            logger.info(f"[Backend] Successfully inserted external application and job: {data['title']} at {data['company']}")
+            logger.info(
+                f"[Backend] Successfully inserted external application and job: {data['title']} at {data['company']}"
+            )
         except Exception as e:
             logger.error(f"❌ [Backend] Database error: {str(e)}")
-            return jsonify({'error': f'Database error: {str(e)}'}), 500
+            return jsonify({"error": f"Database error: {str(e)}"}), 500
 
-        return jsonify({'success': True, 'app_id': app_id, 'job_id': job_id})
+        return jsonify({"success": True, "app_id": app_id, "job_id": job_id})
 
-    @app.route('/api/external-applications/<app_id>', methods=['GET'])
+    @app.route("/api/external-applications/<app_id>", methods=["GET"])
     def get_external_application(app_id):
         """Get details of a specific external application."""
         conn = get_db()
         app = conn.execute(
-            "SELECT * FROM external_applications WHERE app_id = ?",
-            (app_id,)
+            "SELECT * FROM external_applications WHERE app_id = ?", (app_id,)
         ).fetchone()
         conn.close()
 
         if not app:
-            return jsonify({'error': 'Application not found'}), 404
+            return jsonify({"error": "Application not found"}), 404
 
-        return jsonify({'application': dict(app)})
+        return jsonify({"application": dict(app)})
 
-    @app.route('/api/external-applications/<app_id>', methods=['PATCH'])
+    @app.route("/api/external-applications/<app_id>", methods=["PATCH"])
     def update_external_application(app_id):
         """Update an external application and sync status to linked job."""
         data = request.json
@@ -2521,9 +2719,20 @@ def register_routes(app):
 
         # Build update query dynamically
         allowed_fields = [
-            'title', 'company', 'location', 'url', 'source', 'application_method',
-            'applied_date', 'contact_name', 'contact_email', 'status',
-            'follow_up_date', 'notes', 'job_id', 'is_linked_to_job'
+            "title",
+            "company",
+            "location",
+            "url",
+            "source",
+            "application_method",
+            "applied_date",
+            "contact_name",
+            "contact_email",
+            "status",
+            "follow_up_date",
+            "notes",
+            "job_id",
+            "is_linked_to_job",
         ]
         updates = []
         params = []
@@ -2542,74 +2751,73 @@ def register_routes(app):
             conn.execute(query, params)
 
             # If status is being updated, also update the linked job's status
-            if 'status' in data:
+            if "status" in data:
                 # Get the job_id for this external application
                 app = conn.execute(
-                    "SELECT job_id FROM external_applications WHERE app_id = ?",
-                    (app_id,)
+                    "SELECT job_id FROM external_applications WHERE app_id = ?", (app_id,)
                 ).fetchone()
 
-                if app and app['job_id']:
+                if app and app["job_id"]:
                     conn.execute(
                         "UPDATE jobs SET status = ?, updated_at = ? WHERE job_id = ?",
-                        (data['status'], datetime.now().isoformat(), app['job_id'])
+                        (data["status"], datetime.now().isoformat(), app["job_id"]),
                     )
-                    logger.debug(f"[Backend] Synced status '{data['status']}' to linked job: {app['job_id']}")
+                    logger.debug(
+                        f"[Backend] Synced status '{data['status']}' to linked job: {app['job_id']}"
+                    )
 
             conn.commit()
 
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
-    @app.route('/api/external-applications/<app_id>', methods=['DELETE'])
+    @app.route("/api/external-applications/<app_id>", methods=["DELETE"])
     def delete_external_application(app_id):
         """Delete an external application and its linked job."""
         conn = get_db()
 
         # First, get the job_id if it exists
         app = conn.execute(
-            "SELECT job_id FROM external_applications WHERE app_id = ?",
-            (app_id,)
+            "SELECT job_id FROM external_applications WHERE app_id = ?", (app_id,)
         ).fetchone()
 
         # Delete the external application
         conn.execute("DELETE FROM external_applications WHERE app_id = ?", (app_id,))
 
         # If there's a linked job, delete it too
-        if app and app['job_id']:
-            conn.execute("DELETE FROM jobs WHERE job_id = ?", (app['job_id'],))
+        if app and app["job_id"]:
+            conn.execute("DELETE FROM jobs WHERE job_id = ?", (app["job_id"],))
             logger.debug(f"[Backend] Deleted linked job: {app['job_id']}")
 
         conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
     # ============== Resume Management ==============
-    @app.route('/api/resumes', methods=['GET'])
+    @app.route("/api/resumes", methods=["GET"])
     def get_resumes():
         """Get all resume variants."""
         logger.debug("[Backend] GET /api/resumes")
         resumes = load_resumes_from_db()
         logger.debug(f"[Backend] Returning {len(resumes)} resumes")
-        return jsonify({'resumes': resumes})
+        return jsonify({"resumes": resumes})
 
-    @app.route('/api/resumes/<resume_id>', methods=['GET'])
+    @app.route("/api/resumes/<resume_id>", methods=["GET"])
     def get_resume(resume_id):
         """Get a specific resume by ID."""
         logger.debug(f"[Backend] GET /api/resumes/{resume_id}")
         conn = get_db()
         resume = conn.execute(
-            "SELECT * FROM resume_variants WHERE resume_id = ?",
-            (resume_id,)
+            "SELECT * FROM resume_variants WHERE resume_id = ?", (resume_id,)
         ).fetchone()
         conn.close()
 
         if not resume:
-            return jsonify({'error': 'Resume not found'}), 404
+            return jsonify({"error": "Resume not found"}), 404
 
-        return jsonify({'resume': dict(resume)})
+        return jsonify({"resume": dict(resume)})
 
-    @app.route('/api/resumes', methods=['POST'])
+    @app.route("/api/resumes", methods=["POST"])
     def create_resume():
         """
         Create a new resume variant.
@@ -2619,22 +2827,22 @@ def register_routes(app):
         data = request.json
 
         # Validate required fields
-        if not data.get('name'):
-            return jsonify({'error': 'name is required'}), 400
+        if not data.get("name"):
+            return jsonify({"error": "name is required"}), 400
 
-        if not data.get('content'):
-            return jsonify({'error': 'content is required'}), 400
+        if not data.get("content"):
+            return jsonify({"error": "content is required"}), 400
 
         # Generate ID and hash
         resume_id = str(uuid.uuid4())[:16]
-        content = data['content']
+        content = data["content"]
         content_hash = hashlib.sha256(content.encode()).hexdigest()
         now = datetime.now().isoformat()
 
         # Get optional fields
-        focus_areas = data.get('focus_areas', '')
-        target_roles = data.get('target_roles', '')
-        file_path = data.get('file_path', '')
+        focus_areas = data.get("focus_areas", "")
+        target_roles = data.get("target_roles", "")
+        file_path = data.get("file_path", "")
 
         try:
             conn = get_db()
@@ -2642,88 +2850,118 @@ def register_routes(app):
             # Check for duplicate content
             existing = conn.execute(
                 "SELECT resume_id, name FROM resume_variants WHERE content_hash = ?",
-                (content_hash,)
+                (content_hash,),
             ).fetchone()
 
             if existing:
                 conn.close()
-                return jsonify({
-                    'error': f'This resume already exists as "{existing["name"]}"',
-                    'existing_id': existing['resume_id']
-                }), 409
+                return (
+                    jsonify(
+                        {
+                            "error": f'This resume already exists as "{existing["name"]}"',
+                            "existing_id": existing["resume_id"],
+                        }
+                    ),
+                    409,
+                )
 
             # Insert new resume
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT INTO resume_variants (
                     resume_id, name, focus_areas, target_roles, file_path,
                     content, content_hash, created_at, updated_at, is_active
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-            ''', (resume_id, data['name'], focus_areas, target_roles, file_path,
-                  content, content_hash, now, now))
+            """,
+                (
+                    resume_id,
+                    data["name"],
+                    focus_areas,
+                    target_roles,
+                    file_path,
+                    content,
+                    content_hash,
+                    now,
+                    now,
+                ),
+            )
 
             conn.commit()
             conn.close()
 
             logger.info(f"[Backend] Created resume: {data['name']}")
-            return jsonify({'success': True, 'resume_id': resume_id})
+            return jsonify({"success": True, "resume_id": resume_id})
 
         except Exception as e:
             logger.error(f"❌ [Backend] Error creating resume: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/resumes/upload', methods=['POST'])
+    @app.route("/api/resumes/upload", methods=["POST"])
     def upload_resume():
         """
         Upload a resume file (PDF, TXT, or MD) and extract text.
         """
         logger.debug("[Backend] POST /api/resumes/upload")
 
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
 
-        file = request.files['file']
+        file = request.files["file"]
 
-        if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
 
         # Validate file extension
-        allowed_extensions = {'.pdf', '.txt', '.md'}
+        allowed_extensions = {".pdf", ".txt", ".md"}
         filename = secure_filename(file.filename)
         file_ext = os.path.splitext(filename)[1].lower()
 
         if file_ext not in allowed_extensions:
-            return jsonify({'error': f'Invalid file type. Only PDF, TXT, MD allowed'}), 400
+            return jsonify({"error": f"Invalid file type. Only PDF, TXT, MD allowed"}), 400
 
         try:
             # Extract text based on file type
-            if file_ext == '.pdf':
+            if file_ext == ".pdf":
                 # Try to extract PDF text
                 try:
                     from pypdf import PdfReader
+
                     pdf_reader = PdfReader(file)
                     text_parts = []
                     for page in pdf_reader.pages:
                         text_parts.append(page.extract_text())
-                    resume_text = '\n\n'.join(text_parts)
+                    resume_text = "\n\n".join(text_parts)
 
                     if not resume_text.strip():
-                        return jsonify({'error': 'Could not extract text from PDF. It may be scanned or image-based.'}), 400
+                        return (
+                            jsonify(
+                                {
+                                    "error": "Could not extract text from PDF. It may be scanned or image-based."
+                                }
+                            ),
+                            400,
+                        )
 
                 except ImportError:
-                    return jsonify({
-                        'error': 'PDF support not installed. Install with: pip install pypdf',
-                        'hint': 'For now, please copy text from PDF and use "Paste Text" mode'
-                    }), 400
+                    return (
+                        jsonify(
+                            {
+                                "error": "PDF support not installed. Install with: pip install pypdf",
+                                "hint": 'For now, please copy text from PDF and use "Paste Text" mode',
+                            }
+                        ),
+                        400,
+                    )
                 except Exception as e:
-                    return jsonify({'error': f'PDF extraction failed: {str(e)}'}), 400
+                    return jsonify({"error": f"PDF extraction failed: {str(e)}"}), 400
             else:
                 # Text or Markdown file
-                resume_text = file.read().decode('utf-8')
+                resume_text = file.read().decode("utf-8")
 
             # Get metadata from form
-            name = request.form.get('name', filename.rsplit('.', 1)[0])
-            focus_areas = request.form.get('focus_areas', '')
-            target_roles = request.form.get('target_roles', '')
+            name = request.form.get("name", filename.rsplit(".", 1)[0])
+            focus_areas = request.form.get("focus_areas", "")
+            target_roles = request.form.get("target_roles", "")
 
             # Generate ID and hash
             resume_id = str(uuid.uuid4())[:16]
@@ -2735,44 +2973,64 @@ def register_routes(app):
             # Check for duplicate content
             existing = conn.execute(
                 "SELECT resume_id, name FROM resume_variants WHERE content_hash = ?",
-                (content_hash,)
+                (content_hash,),
             ).fetchone()
 
             if existing:
                 conn.close()
-                return jsonify({
-                    'error': f'This resume already exists as "{existing["name"]}"',
-                    'existing_id': existing['resume_id']
-                }), 409
+                return (
+                    jsonify(
+                        {
+                            "error": f'This resume already exists as "{existing["name"]}"',
+                            "existing_id": existing["resume_id"],
+                        }
+                    ),
+                    409,
+                )
 
             # Insert new resume
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT INTO resume_variants (
                     resume_id, name, focus_areas, target_roles, file_path,
                     content, content_hash, created_at, updated_at, is_active
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-            ''', (resume_id, name, focus_areas, target_roles, filename,
-                  resume_text, content_hash, now, now))
+            """,
+                (
+                    resume_id,
+                    name,
+                    focus_areas,
+                    target_roles,
+                    filename,
+                    resume_text,
+                    content_hash,
+                    now,
+                    now,
+                ),
+            )
 
             conn.commit()
             conn.close()
 
             logger.info(f"[Backend] Uploaded resume: {name} ({len(resume_text)} chars)")
-            return jsonify({
-                'success': True,
-                'resume_id': resume_id,
-                'name': name,
-                'text_length': len(resume_text),
-                'pages_extracted': resume_text.count('\n\n') + 1 if file_ext == '.pdf' else 1
-            })
+            return jsonify(
+                {
+                    "success": True,
+                    "resume_id": resume_id,
+                    "name": name,
+                    "text_length": len(resume_text),
+                    "pages_extracted": resume_text.count("\n\n") + 1 if file_ext == ".pdf" else 1,
+                }
+            )
 
         except Exception as e:
             logger.error(f"❌ [Backend] Error uploading resume: {e}")
             import traceback
-            traceback.print_exc()
-            return jsonify({'error': str(e)}), 500
 
-    @app.route('/api/resumes/<resume_id>', methods=['PATCH'])
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/resumes/<resume_id>", methods=["PATCH"])
     def update_resume(resume_id):
         """Update resume metadata (not content - that requires new variant)."""
         logger.debug(f"[Backend] PATCH /api/resumes/{resume_id}")
@@ -2780,7 +3038,7 @@ def register_routes(app):
         conn = get_db()
 
         # Build update query for metadata only
-        allowed_fields = ['name', 'focus_areas', 'target_roles', 'is_active']
+        allowed_fields = ["name", "focus_areas", "target_roles", "is_active"]
         updates = []
         params = []
 
@@ -2800,9 +3058,9 @@ def register_routes(app):
 
         conn.close()
         logger.info(f"[Backend] Updated resume: {resume_id}")
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
-    @app.route('/api/resumes/<resume_id>', methods=['DELETE'])
+    @app.route("/api/resumes/<resume_id>", methods=["DELETE"])
     def delete_resume(resume_id):
         """Soft delete a resume (sets is_active = 0)."""
         logger.debug(f"[Backend] DELETE /api/resumes/{resume_id}")
@@ -2810,103 +3068,109 @@ def register_routes(app):
 
         conn.execute(
             "UPDATE resume_variants SET is_active = 0, updated_at = ? WHERE resume_id = ?",
-            (datetime.now().isoformat(), resume_id)
+            (datetime.now().isoformat(), resume_id),
         )
 
         conn.commit()
         conn.close()
 
         logger.info(f"[Backend] Deactivated resume: {resume_id}")
-        return jsonify({'success': True})
+        return jsonify({"success": True})
 
     # ============== Resume Recommendations ==============
-    @app.route('/api/jobs/<job_id>/recommend-resume', methods=['POST'])
+    @app.route("/api/jobs/<job_id>/recommend-resume", methods=["POST"])
     def get_resume_recommendation(job_id):
         """Get AI resume recommendation for a specific job."""
         logger.debug(f"[Backend] POST /api/jobs/{job_id}/recommend-resume")
 
         conn = get_db()
-        job = conn.execute(
-            "SELECT * FROM jobs WHERE job_id = ?",
-            (job_id,)
-        ).fetchone()
+        job = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
 
         if not job:
             conn.close()
-            return jsonify({'error': 'Job not found'}), 404
+            return jsonify({"error": "Job not found"}), 404
 
         job_dict = dict(job)
 
         # Check if recommendation already exists
-        if job_dict.get('resume_recommendation'):
+        if job_dict.get("resume_recommendation"):
             try:
-                cached_rec = json.loads(job_dict['resume_recommendation'])
+                cached_rec = json.loads(job_dict["resume_recommendation"])
                 conn.close()
                 logger.debug(f"[Backend] Returning cached recommendation for {job_id}")
-                return jsonify({'recommendation': cached_rec, 'cached': True})
+                return jsonify({"recommendation": cached_rec, "cached": True})
             except:
                 pass  # If parsing fails, generate new recommendation
 
         # Generate new recommendation
         try:
             recommendation = recommend_resume_for_job(
-                job_dict.get('raw_text', ''),
-                job_dict.get('title', ''),
-                job_dict.get('company', '')
+                job_dict.get("raw_text", ""), job_dict.get("title", ""), job_dict.get("company", "")
             )
 
             # Store recommendation in database
             now = datetime.now().isoformat()
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE jobs
                 SET recommended_resume_id = ?,
                     resume_recommendation = ?,
                     resume_match_score = ?,
                     updated_at = ?
                 WHERE job_id = ?
-            """, (
-                recommendation['resume_id'],
-                json.dumps(recommendation),
-                recommendation['confidence'],
-                now,
-                job_id
-            ))
+            """,
+                (
+                    recommendation["resume_id"],
+                    json.dumps(recommendation),
+                    recommendation["confidence"],
+                    now,
+                    job_id,
+                ),
+            )
 
             # Log the recommendation
             log_id = str(uuid.uuid4())[:16]
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO resume_usage_log (
                     log_id, resume_id, job_id, recommended_at,
                     confidence_score, reasoning
                 ) VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                log_id,
-                recommendation['resume_id'],
-                job_id,
-                now,
-                recommendation['confidence'],
-                recommendation['reasoning']
-            ))
+            """,
+                (
+                    log_id,
+                    recommendation["resume_id"],
+                    job_id,
+                    now,
+                    recommendation["confidence"],
+                    recommendation["reasoning"],
+                ),
+            )
 
             # Update resume usage count
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE resume_variants
                 SET usage_count = usage_count + 1
                 WHERE resume_id = ?
-            """, (recommendation['resume_id'],))
+            """,
+                (recommendation["resume_id"],),
+            )
 
             conn.commit()
             conn.close()
 
-            logger.info(f"[Backend] Generated resume recommendation for {job_id}: {recommendation['resume_name']}")
-            return jsonify({'recommendation': recommendation, 'cached': False})
+            logger.info(
+                f"[Backend] Generated resume recommendation for {job_id}: {recommendation['resume_name']}"
+            )
+            return jsonify({"recommendation": recommendation, "cached": False})
 
         except Exception as e:
             conn.close()
             logger.error(f"❌ [Backend] Error generating recommendation: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/jobs/recommend-resumes-batch', methods=['POST'])
+    @app.route("/api/jobs/recommend-resumes-batch", methods=["POST"])
     def batch_recommend_resumes():
         """
         Generate resume recommendations for multiple jobs in batch.
@@ -2914,13 +3178,13 @@ def register_routes(app):
         """
         logger.debug("[Backend] POST /api/jobs/recommend-resumes-batch")
         data = request.json
-        job_ids = data.get('job_ids', [])
+        job_ids = data.get("job_ids", [])
 
         if not job_ids:
-            return jsonify({'error': 'job_ids required'}), 400
+            return jsonify({"error": "job_ids required"}), 400
 
         if len(job_ids) > 100:
-            return jsonify({'error': 'Maximum 100 jobs per batch'}), 400
+            return jsonify({"error": "Maximum 100 jobs per batch"}), 400
 
         conn = get_db()
         results = []
@@ -2929,111 +3193,126 @@ def register_routes(app):
         for idx, job_id in enumerate(job_ids):
             try:
                 # Get job
-                job = conn.execute(
-                    "SELECT * FROM jobs WHERE job_id = ?",
-                    (job_id,)
-                ).fetchone()
+                job = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
 
                 if not job:
-                    errors.append({'job_id': job_id, 'error': 'Job not found'})
+                    errors.append({"job_id": job_id, "error": "Job not found"})
                     continue
 
                 job_dict = dict(job)
 
                 # Skip if already has recommendation
-                if job_dict.get('resume_recommendation'):
-                    results.append({
-                        'job_id': job_id,
-                        'status': 'skipped',
-                        'reason': 'Already has recommendation'
-                    })
+                if job_dict.get("resume_recommendation"):
+                    results.append(
+                        {
+                            "job_id": job_id,
+                            "status": "skipped",
+                            "reason": "Already has recommendation",
+                        }
+                    )
                     continue
 
                 # Generate recommendation
                 recommendation = recommend_resume_for_job(
-                    job_dict.get('raw_text', ''),
-                    job_dict.get('title', ''),
-                    job_dict.get('company', '')
+                    job_dict.get("raw_text", ""),
+                    job_dict.get("title", ""),
+                    job_dict.get("company", ""),
                 )
 
                 # Store in database
                 now = datetime.now().isoformat()
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE jobs
                     SET recommended_resume_id = ?,
                         resume_recommendation = ?,
                         resume_match_score = ?,
                         updated_at = ?
                     WHERE job_id = ?
-                """, (
-                    recommendation['resume_id'],
-                    json.dumps(recommendation),
-                    recommendation['confidence'],
-                    now,
-                    job_id
-                ))
+                """,
+                    (
+                        recommendation["resume_id"],
+                        json.dumps(recommendation),
+                        recommendation["confidence"],
+                        now,
+                        job_id,
+                    ),
+                )
 
                 # Log the recommendation
                 log_id = str(uuid.uuid4())[:16]
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO resume_usage_log (
                         log_id, resume_id, job_id, recommended_at,
                         confidence_score, reasoning
                     ) VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    log_id,
-                    recommendation['resume_id'],
-                    job_id,
-                    now,
-                    recommendation['confidence'],
-                    recommendation['reasoning']
-                ))
+                """,
+                    (
+                        log_id,
+                        recommendation["resume_id"],
+                        job_id,
+                        now,
+                        recommendation["confidence"],
+                        recommendation["reasoning"],
+                    ),
+                )
 
                 # Update usage count
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE resume_variants
                     SET usage_count = usage_count + 1
                     WHERE resume_id = ?
-                """, (recommendation['resume_id'],))
+                """,
+                    (recommendation["resume_id"],),
+                )
 
-                results.append({
-                    'job_id': job_id,
-                    'status': 'success',
-                    'resume_id': recommendation['resume_id'],
-                    'resume_name': recommendation['resume_name'],
-                    'confidence': recommendation['confidence']
-                })
+                results.append(
+                    {
+                        "job_id": job_id,
+                        "status": "success",
+                        "resume_id": recommendation["resume_id"],
+                        "resume_name": recommendation["resume_name"],
+                        "confidence": recommendation["confidence"],
+                    }
+                )
 
                 # Rate limiting: small delay between API calls
                 if idx < len(job_ids) - 1:  # Don't delay after last one
                     import time
+
                     time.sleep(0.5)
 
             except Exception as e:
-                errors.append({'job_id': job_id, 'error': str(e)})
+                errors.append({"job_id": job_id, "error": str(e)})
                 logger.error(f"❌ [Backend] Error processing {job_id}: {e}")
 
         conn.commit()
         conn.close()
 
-        success_count = len([r for r in results if r['status'] == 'success'])
-        logger.info(f"[Backend] Batch recommendation complete: {success_count}/{len(job_ids)} successful")
+        success_count = len([r for r in results if r["status"] == "success"])
+        logger.info(
+            f"[Backend] Batch recommendation complete: {success_count}/{len(job_ids)} successful"
+        )
 
-        return jsonify({
-            'success': True,
-            'results': results,
-            'errors': errors,
-            'summary': {
-                'total': len(job_ids),
-                'successful': success_count,
-                'skipped': len([r for r in results if r['status'] == 'skipped']),
-                'failed': len(errors)
+        return jsonify(
+            {
+                "success": True,
+                "results": results,
+                "errors": errors,
+                "summary": {
+                    "total": len(job_ids),
+                    "successful": success_count,
+                    "skipped": len([r for r in results if r["status"] == "skipped"]),
+                    "failed": len(errors),
+                },
             }
-        })
+        )
 
     # ===== ENRICHMENT ENDPOINTS =====
 
-    @app.route('/api/jobs/<job_id>/enrich', methods=['POST'])
+    @app.route("/api/jobs/<job_id>/enrich", methods=["POST"])
     def api_enrich_job(job_id):
         """
         Enrich a single job with additional data from web search.
@@ -3050,20 +3329,20 @@ def register_routes(app):
             from app.enrichment import enrich_job
 
             data = request.get_json() or {}
-            force = data.get('force', False)
+            force = data.get("force", False)
 
             result = enrich_job(job_id, force=force)
 
-            if result.get('success'):
+            if result.get("success"):
                 return jsonify(result)
             else:
                 return jsonify(result), 400
 
         except Exception as e:
             logger.error(f"Error enriching job {job_id}: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/jobs/enrich-batch', methods=['POST'])
+    @app.route("/api/jobs/enrich-batch", methods=["POST"])
     def api_enrich_jobs_batch():
         """
         Enrich multiple jobs with additional data.
@@ -3081,20 +3360,20 @@ def register_routes(app):
             from app.enrichment import enrich_jobs_batch
 
             data = request.get_json() or {}
-            job_ids = data.get('job_ids', [])
-            max_jobs = min(data.get('max_jobs', 10), 50)  # Cap at 50
+            job_ids = data.get("job_ids", [])
+            max_jobs = min(data.get("max_jobs", 10), 50)  # Cap at 50
 
             if not job_ids:
-                return jsonify({'error': 'No job_ids provided'}), 400
+                return jsonify({"error": "No job_ids provided"}), 400
 
             result = enrich_jobs_batch(job_ids, max_jobs=max_jobs)
             return jsonify(result)
 
         except Exception as e:
             logger.error(f"Error in batch enrichment: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/jobs/auto-enrich', methods=['POST'])
+    @app.route("/api/jobs/auto-enrich", methods=["POST"])
     def api_auto_enrich():
         """
         Automatically enrich top-scoring unenriched jobs.
@@ -3112,17 +3391,17 @@ def register_routes(app):
             from app.enrichment import auto_enrich_top_jobs
 
             data = request.get_json() or {}
-            count = min(data.get('count', 5), 20)
-            min_score = data.get('min_score', 50)
+            count = min(data.get("count", 5), 20)
+            min_score = data.get("min_score", 50)
 
             result = auto_enrich_top_jobs(count=count, min_score=min_score)
             return jsonify(result)
 
         except Exception as e:
             logger.error(f"Error in auto enrichment: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/jobs/<job_id>/enrichment', methods=['GET'])
+    @app.route("/api/jobs/<job_id>/enrichment", methods=["GET"])
     def api_get_enrichment(job_id):
         """
         Get enrichment status and data for a job.
@@ -3141,35 +3420,42 @@ def register_routes(app):
         """
         try:
             conn = get_db()
-            job = conn.execute("""
+            job = conn.execute(
+                """
                 SELECT salary_estimate, salary_confidence, full_description,
                        last_enriched, enrichment_source, is_aggregator, logo_url
                 FROM jobs WHERE job_id = ?
-            """, (job_id,)).fetchone()
+            """,
+                (job_id,),
+            ).fetchone()
             conn.close()
 
             if not job:
-                return jsonify({'error': 'Job not found'}), 404
+                return jsonify({"error": "Job not found"}), 404
 
-            return jsonify({
-                'job_id': job_id,
-                'salary_estimate': job['salary_estimate'],
-                'salary_confidence': job['salary_confidence'] or 'none',
-                'full_description': (job['full_description'][:1000] + '...')
-                    if job['full_description'] and len(job['full_description']) > 1000
-                    else job['full_description'],
-                'last_enriched': job['last_enriched'],
-                'enrichment_source': job['enrichment_source'],
-                'is_aggregator': bool(job['is_aggregator']),
-                'logo_url': job['logo_url'],
-                'is_enriched': job['last_enriched'] is not None
-            })
+            return jsonify(
+                {
+                    "job_id": job_id,
+                    "salary_estimate": job["salary_estimate"],
+                    "salary_confidence": job["salary_confidence"] or "none",
+                    "full_description": (
+                        (job["full_description"][:1000] + "...")
+                        if job["full_description"] and len(job["full_description"]) > 1000
+                        else job["full_description"]
+                    ),
+                    "last_enriched": job["last_enriched"],
+                    "enrichment_source": job["enrichment_source"],
+                    "is_aggregator": bool(job["is_aggregator"]),
+                    "logo_url": job["logo_url"],
+                    "is_enriched": job["last_enriched"] is not None,
+                }
+            )
 
         except Exception as e:
             logger.error(f"Error getting enrichment for {job_id}: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/jobs/<job_id>/logo', methods=['POST'])
+    @app.route("/api/jobs/<job_id>/logo", methods=["POST"])
     def api_fetch_logo(job_id):
         """
         Fetch and update logo for a job.
@@ -3183,22 +3469,20 @@ def register_routes(app):
             from app.enrichment import update_job_logo
 
             conn = get_db()
-            job = conn.execute(
-                "SELECT company FROM jobs WHERE job_id = ?", (job_id,)
-            ).fetchone()
+            job = conn.execute("SELECT company FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
             conn.close()
 
             if not job:
-                return jsonify({'error': 'Job not found'}), 404
+                return jsonify({"error": "Job not found"}), 404
 
-            result = update_job_logo(job_id, job['company'])
+            result = update_job_logo(job_id, job["company"])
             return jsonify(result)
 
         except Exception as e:
             logger.error(f"Error fetching logo for {job_id}: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/jobs/<job_id>/detect-aggregator', methods=['POST'])
+    @app.route("/api/jobs/<job_id>/detect-aggregator", methods=["POST"])
     def api_detect_aggregator(job_id):
         """
         Detect if a job is from a staffing agency.
@@ -3213,27 +3497,26 @@ def register_routes(app):
 
             conn = get_db()
             job = conn.execute(
-                "SELECT company, title, raw_text FROM jobs WHERE job_id = ?",
-                (job_id,)
+                "SELECT company, title, raw_text FROM jobs WHERE job_id = ?", (job_id,)
             ).fetchone()
             conn.close()
 
             if not job:
-                return jsonify({'error': 'Job not found'}), 404
+                return jsonify({"error": "Job not found"}), 404
 
             result = detect_and_flag_aggregator(
                 job_id=job_id,
-                company=job['company'],
-                title=job['title'],
-                description=job['raw_text'] or ''
+                company=job["company"],
+                title=job["title"],
+                description=job["raw_text"] or "",
             )
             return jsonify(result)
 
         except Exception as e:
             logger.error(f"Error detecting aggregator for {job_id}: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/research-jobs', methods=['POST'])
+    @app.route("/api/research-jobs", methods=["POST"])
     def research_jobs():
         """
         Use Claude AI to research and recommend jobs based on user's resume and location preferences.
@@ -3245,22 +3528,24 @@ def register_routes(app):
             # Load resumes from database
             resumes = load_resumes_from_db()
             if not resumes:
-                return jsonify({'error': 'No resumes found in database'}), 400
+                return jsonify({"error": "No resumes found in database"}), 400
 
             # Combine resume content
-            resume_text = "\n\n---RESUME VARIANT---\n\n".join([
-                f"{r['name']}\nFocus: {r.get('focus_areas', 'N/A')}\n\n{r['content']}"
-                for r in resumes
-            ])
+            resume_text = "\n\n---RESUME VARIANT---\n\n".join(
+                [
+                    f"{r['name']}\nFocus: {r.get('focus_areas', 'N/A')}\n\n{r['content']}"
+                    for r in resumes
+                ]
+            )
 
             # Get location preferences from config
-            primary_locations = [loc['name'] for loc in CONFIG.primary_locations]
+            primary_locations = [loc["name"] for loc in CONFIG.primary_locations]
 
             # Get experience level and preferences
             exp_level_dict = CONFIG.experience_level
-            exp_level = exp_level_dict.get('current_level', 'mid')
-            min_years = exp_level_dict.get('min_years', 1)
-            max_years = exp_level_dict.get('max_years', 5)
+            exp_level = exp_level_dict.get("current_level", "mid")
+            min_years = exp_level_dict.get("min_years", 1)
+            max_years = exp_level_dict.get("max_years", 5)
 
             # Create research prompt
             research_prompt = f"""You are a job search research assistant. Based on the candidate's resume and preferences, recommend 5-10 specific job opportunities they should pursue.
@@ -3307,26 +3592,23 @@ def register_routes(app):
     Focus on real, reputable companies and current in-demand roles. Be specific and actionable."""
 
             # Call Claude API
-            client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+            client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
             response = client.messages.create(
                 model=CONFIG.ai_model or "claude-sonnet-4-20250514",
                 max_tokens=4000,
                 temperature=0.7,
-                messages=[{
-                    "role": "user",
-                    "content": research_prompt
-                }]
+                messages=[{"role": "user", "content": research_prompt}],
             )
 
             # Parse response
             response_text = response.content[0].text.strip()
 
             # Extract JSON from response
-            if '```json' in response_text:
-                response_text = response_text.split('```json')[1].split('```')[0].strip()
-            elif '```' in response_text:
-                response_text = response_text.split('```')[1].split('```')[0].strip()
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
 
             recommendations = json.loads(response_text)
 
@@ -3345,83 +3627,94 @@ def register_routes(app):
 
                 # Check if already exists
                 existing = conn.execute(
-                    "SELECT job_id FROM jobs WHERE job_id = ?",
-                    (job_id,)
+                    "SELECT job_id FROM jobs WHERE job_id = ?", (job_id,)
                 ).fetchone()
 
                 if existing:
-                    logger.debug(f"[Backend] Skipping duplicate: {rec['title']} at {rec['company']}")
+                    logger.debug(
+                        f"[Backend] Skipping duplicate: {rec['title']} at {rec['company']}"
+                    )
                     continue
 
                 # Create analysis JSON
                 analysis = {
-                    'qualification_score': rec.get('match_score', 80),
-                    'should_apply': True,
-                    'strengths': rec.get('matching_skills', []),
-                    'gaps': [],
-                    'recommendation': rec.get('why_good_fit', ''),
-                    'resume_to_use': resumes[0]['name'] if resumes else 'default'
+                    "qualification_score": rec.get("match_score", 80),
+                    "should_apply": True,
+                    "strengths": rec.get("matching_skills", []),
+                    "gaps": [],
+                    "recommendation": rec.get("why_good_fit", ""),
+                    "resume_to_use": resumes[0]["name"] if resumes else "default",
                 }
 
                 # Generate job URL - prefer career page, fallback to Google Jobs search
-                career_url = rec.get('career_page_url', '').strip()
-                if career_url and career_url.startswith('http'):
+                career_url = rec.get("career_page_url", "").strip()
+                if career_url and career_url.startswith("http"):
                     job_url = career_url
                 else:
                     # Create Google Jobs search URL (better than regular Google search)
-                    search_query = f"{rec['title']} {rec['company']}".replace(' ', '+')
+                    search_query = f"{rec['title']} {rec['company']}".replace(" ", "+")
                     job_url = f"https://www.google.com/search?q={search_query}&ibp=htl;jobs"
 
                 # Insert into database
-                conn.execute('''
+                conn.execute(
+                    """
                     INSERT INTO jobs (
                         job_id, title, company, location, url, source,
                         status, score, baseline_score, analysis, raw_text,
                         created_at, updated_at, is_filtered
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    job_id,
-                    rec['title'],
-                    rec['company'],
-                    rec.get('location', primary_locations[0] if primary_locations else 'Remote'),
-                    job_url,
-                    'claude_research',
-                    'new',
-                    rec.get('match_score', 80),
-                    rec.get('match_score', 80),
-                    json.dumps(analysis),
-                    rec.get('why_good_fit', ''),
-                    now,
-                    now,
-                    0
-                ))
+                """,
+                    (
+                        job_id,
+                        rec["title"],
+                        rec["company"],
+                        rec.get(
+                            "location", primary_locations[0] if primary_locations else "Remote"
+                        ),
+                        job_url,
+                        "claude_research",
+                        "new",
+                        rec.get("match_score", 80),
+                        rec.get("match_score", 80),
+                        json.dumps(analysis),
+                        rec.get("why_good_fit", ""),
+                        now,
+                        now,
+                        0,
+                    ),
+                )
 
-                saved_jobs.append({
-                    'job_id': job_id,
-                    'title': rec['title'],
-                    'company': rec['company'],
-                    'score': rec.get('match_score', 80)
-                })
+                saved_jobs.append(
+                    {
+                        "job_id": job_id,
+                        "title": rec["title"],
+                        "company": rec["company"],
+                        "score": rec.get("match_score", 80),
+                    }
+                )
 
             conn.commit()
             conn.close()
 
             logger.info(f"[Backend] Saved {len(saved_jobs)} new research jobs to database")
 
-            return jsonify({
-                'success': True,
-                'jobs_found': len(recommendations),
-                'jobs_saved': len(saved_jobs),
-                'saved_jobs': saved_jobs
-            })
+            return jsonify(
+                {
+                    "success": True,
+                    "jobs_found": len(recommendations),
+                    "jobs_saved": len(saved_jobs),
+                    "saved_jobs": saved_jobs,
+                }
+            )
 
         except Exception as e:
             logger.error(f"❌ [Backend] Error in job research: {str(e)}")
             import traceback
-            traceback.print_exc()
-            return jsonify({'error': f'Research failed: {str(e)}'}), 500
 
-    @app.route('/api/research-jobs/<resume_id>', methods=['POST'])
+            traceback.print_exc()
+            return jsonify({"error": f"Research failed: {str(e)}"}), 500
+
+    @app.route("/api/research-jobs/<resume_id>", methods=["POST"])
     def research_jobs_for_resume(resume_id):
         """
         Research jobs tailored specifically to a single resume.
@@ -3434,17 +3727,16 @@ def register_routes(app):
 
             # Get the resume
             resume = conn.execute(
-                "SELECT * FROM resume_variants WHERE resume_id = ? AND is_active = 1",
-                (resume_id,)
+                "SELECT * FROM resume_variants WHERE resume_id = ? AND is_active = 1", (resume_id,)
             ).fetchone()
 
             if not resume:
-                return jsonify({'error': 'Resume not found'}), 404
+                return jsonify({"error": "Resume not found"}), 404
 
-            resume_name = resume['name']
-            resume_content = resume['content']
-            focus_areas = resume['focus_areas'] or 'Not specified'
-            target_roles = resume['target_roles'] or 'Not specified'
+            resume_name = resume["name"]
+            resume_content = resume["content"]
+            focus_areas = resume["focus_areas"] or "Not specified"
+            target_roles = resume["target_roles"] or "Not specified"
 
             logger.info(f"[Backend] Researching jobs for resume: {resume_name}")
             logger.info(f"  Focus areas: {focus_areas}")
@@ -3495,30 +3787,29 @@ def register_routes(app):
     Focus on roles that specifically match the focus areas and target roles for THIS resume."""
 
             # Call Claude API
-            client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+            client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
             response = client.messages.create(
                 model=CONFIG.ai_model or "claude-sonnet-4-20250514",
                 max_tokens=4000,
                 temperature=0.7,
-                messages=[{
-                    "role": "user",
-                    "content": research_prompt
-                }]
+                messages=[{"role": "user", "content": research_prompt}],
             )
 
             # Parse response
             response_text = response.content[0].text.strip()
 
             # Extract JSON from response
-            if '```json' in response_text:
-                response_text = response_text.split('```json')[1].split('```')[0].strip()
-            elif '```' in response_text:
-                response_text = response_text.split('```')[1].split('```')[0].strip()
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
 
             recommendations = json.loads(response_text)
 
-            logger.info(f"[Backend] Claude generated {len(recommendations)} job recommendations for {resume_name}")
+            logger.info(
+                f"[Backend] Claude generated {len(recommendations)} job recommendations for {resume_name}"
+            )
 
             # Save recommendations to database
             saved_jobs = []
@@ -3532,82 +3823,91 @@ def register_routes(app):
 
                 # Check if already exists
                 existing = conn.execute(
-                    "SELECT job_id FROM jobs WHERE job_id = ?",
-                    (job_id,)
+                    "SELECT job_id FROM jobs WHERE job_id = ?", (job_id,)
                 ).fetchone()
 
                 if existing:
-                    logger.debug(f"[Backend] Skipping duplicate: {rec['title']} at {rec['company']}")
+                    logger.debug(
+                        f"[Backend] Skipping duplicate: {rec['title']} at {rec['company']}"
+                    )
                     continue
 
                 # Create analysis JSON
                 analysis = {
-                    'qualification_score': rec.get('match_score', 80),
-                    'should_apply': True,
-                    'strengths': rec.get('matching_skills', []),
-                    'gaps': [],
-                    'recommendation': rec.get('why_good_fit', ''),
-                    'resume_to_use': resume_name
+                    "qualification_score": rec.get("match_score", 80),
+                    "should_apply": True,
+                    "strengths": rec.get("matching_skills", []),
+                    "gaps": [],
+                    "recommendation": rec.get("why_good_fit", ""),
+                    "resume_to_use": resume_name,
                 }
 
                 # Generate job URL - prefer career page, fallback to Google Jobs search
-                career_url = rec.get('career_page_url', '').strip()
-                if career_url and career_url.startswith('http'):
+                career_url = rec.get("career_page_url", "").strip()
+                if career_url and career_url.startswith("http"):
                     job_url = career_url
                 else:
                     # Create Google Jobs search URL (better than regular Google search)
-                    search_query = f"{rec['title']} {rec['company']}".replace(' ', '+')
+                    search_query = f"{rec['title']} {rec['company']}".replace(" ", "+")
                     job_url = f"https://www.google.com/search?q={search_query}&ibp=htl;jobs"
 
                 # Insert into database
-                conn.execute('''
+                conn.execute(
+                    """
                     INSERT INTO jobs (
                         job_id, title, company, location, url, source,
                         status, score, baseline_score, analysis, raw_text,
                         created_at, updated_at, is_filtered
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                ''', (
-                    job_id,
-                    rec['title'],
-                    rec['company'],
-                    rec.get('location', 'Remote'),
-                    job_url,
-                    f'claude_research_{resume_name}',
-                    'new',
-                    rec.get('match_score', 80),
-                    rec.get('match_score', 80),
-                    json.dumps(analysis),
-                    json.dumps(rec),
-                    now,
-                    now
-                ))
+                """,
+                    (
+                        job_id,
+                        rec["title"],
+                        rec["company"],
+                        rec.get("location", "Remote"),
+                        job_url,
+                        f"claude_research_{resume_name}",
+                        "new",
+                        rec.get("match_score", 80),
+                        rec.get("match_score", 80),
+                        json.dumps(analysis),
+                        json.dumps(rec),
+                        now,
+                        now,
+                    ),
+                )
 
-                saved_jobs.append({
-                    'title': rec['title'],
-                    'company': rec['company'],
-                    'score': rec.get('match_score', 80)
-                })
+                saved_jobs.append(
+                    {
+                        "title": rec["title"],
+                        "company": rec["company"],
+                        "score": rec.get("match_score", 80),
+                    }
+                )
 
             conn.commit()
             conn.close()
 
-            return jsonify({
-                'success': True,
-                'jobs_found': len(recommendations),
-                'jobs_saved': len(saved_jobs),
-                'resume_name': resume_name,
-                'saved_jobs': saved_jobs
-            })
+            return jsonify(
+                {
+                    "success": True,
+                    "jobs_found": len(recommendations),
+                    "jobs_saved": len(saved_jobs),
+                    "resume_name": resume_name,
+                    "saved_jobs": saved_jobs,
+                }
+            )
 
         except Exception as e:
             logger.error(f"❌ [Backend] Error in resume-specific job research: {str(e)}")
             import traceback
+
             traceback.print_exc()
-            return jsonify({'error': f'Research failed: {str(e)}'}), 500
+            return jsonify({"error": f"Research failed: {str(e)}"}), 500
 
     # ============== Backup API Routes ==============
 
-    @app.route('/api/backup/create', methods=['POST'])
+    @app.route("/api/backup/create", methods=["POST"])
     def api_create_backup():
         """Create a manual database backup."""
         try:
@@ -3615,21 +3915,20 @@ def register_routes(app):
             backup_path = backup_manager.create_backup()
 
             if backup_path:
-                return jsonify({
-                    'success': True,
-                    'message': 'Backup created successfully',
-                    'filename': backup_path.name,
-                    'path': str(backup_path)
-                })
+                return jsonify(
+                    {
+                        "success": True,
+                        "message": "Backup created successfully",
+                        "filename": backup_path.name,
+                        "path": str(backup_path),
+                    }
+                )
             else:
-                return jsonify({
-                    'success': False,
-                    'error': 'Failed to create backup'
-                }), 500
+                return jsonify({"success": False, "error": "Failed to create backup"}), 500
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/backup/list', methods=['GET'])
+    @app.route("/api/backup/list", methods=["GET"])
     def api_list_backups():
         """List all available backups."""
         try:
@@ -3637,14 +3936,11 @@ def register_routes(app):
             backups = backup_manager.list_backups()
             stats = backup_manager.get_backup_stats()
 
-            return jsonify({
-                'backups': backups,
-                'stats': stats
-            })
+            return jsonify({"backups": backups, "stats": stats})
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/backup/restore/<filename>', methods=['POST'])
+    @app.route("/api/backup/restore/<filename>", methods=["POST"])
     def api_restore_backup(filename):
         """Restore database from a backup file."""
         try:
@@ -3652,19 +3948,13 @@ def register_routes(app):
             success = backup_manager.restore_backup(filename)
 
             if success:
-                return jsonify({
-                    'success': True,
-                    'message': f'Database restored from {filename}'
-                })
+                return jsonify({"success": True, "message": f"Database restored from {filename}"})
             else:
-                return jsonify({
-                    'success': False,
-                    'error': 'Restore failed'
-                }), 500
+                return jsonify({"success": False, "error": "Restore failed"}), 500
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/ai/providers')
+    @app.route("/api/ai/providers")
     def api_ai_providers():
         """
         Get information about available AI providers.
@@ -3684,16 +3974,18 @@ def register_routes(app):
             current_provider = CONFIG.ai_provider
             current_model = CONFIG.ai_model
 
-            return jsonify({
-                'providers': providers,
-                'current_provider': current_provider,
-                'current_model': current_model
-            })
+            return jsonify(
+                {
+                    "providers": providers,
+                    "current_provider": current_provider,
+                    "current_model": current_model,
+                }
+            )
         except Exception as e:
             logger.error(f"Error getting AI providers: {e}")
-            return jsonify({'error': str(e)}), 500
+            return jsonify({"error": str(e)}), 500
 
-    @app.route('/api/ai/test', methods=['POST'])
+    @app.route("/api/ai/test", methods=["POST"])
     def api_ai_test():
         """
         Test an AI provider connection.
@@ -3712,48 +4004,43 @@ def register_routes(app):
         """
         try:
             data = request.get_json() or {}
-            provider_name = data.get('provider', 'claude')
+            provider_name = data.get("provider", "claude")
 
             # Import and test the provider
             from app.ai import get_provider
 
-            test_config = {
-                'ai': {
-                    'provider': provider_name
-                }
-            }
+            test_config = {"ai": {"provider": provider_name}}
 
             provider = get_provider(test_config)
 
             # Simple test: just verify we can create the provider
             # The provider init already validates API key
-            return jsonify({
-                'success': True,
-                'provider': provider.provider_name,
-                'model': provider.model_name,
-                'message': f'{provider.provider_name} provider is configured correctly'
-            })
+            return jsonify(
+                {
+                    "success": True,
+                    "provider": provider.provider_name,
+                    "model": provider.model_name,
+                    "message": f"{provider.provider_name} provider is configured correctly",
+                }
+            )
         except ValueError as e:
             # Missing API key or invalid provider
-            return jsonify({
-                'success': False,
-                'error': str(e),
-                'message': 'Provider configuration error'
-            }), 400
+            return (
+                jsonify(
+                    {"success": False, "error": str(e), "message": "Provider configuration error"}
+                ),
+                400,
+            )
         except ImportError as e:
             # Package not installed
-            return jsonify({
-                'success': False,
-                'error': str(e),
-                'message': 'Required package not installed'
-            }), 400
+            return (
+                jsonify(
+                    {"success": False, "error": str(e), "message": "Required package not installed"}
+                ),
+                400,
+            )
         except Exception as e:
             logger.error(f"Error testing AI provider: {e}")
-            return jsonify({
-                'success': False,
-                'error': str(e),
-                'message': 'Test failed'
-            }), 500
-
+            return jsonify({"success": False, "error": str(e), "message": "Test failed"}), 500
 
     return app

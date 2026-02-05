@@ -277,6 +277,16 @@ def run_migrations(conn):
         logger.info("Migrating database: adding 'applied_date' column to jobs...")
         conn.execute("ALTER TABLE jobs ADD COLUMN applied_date TEXT")
 
+    # Migration: Add post_scan_action column to email sources
+    email_sources_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(custom_email_sources)").fetchall()
+    }
+    if "post_scan_action" not in email_sources_columns:
+        logger.info("Migrating database: adding 'post_scan_action' to custom_email_sources...")
+        conn.execute(
+            "ALTER TABLE custom_email_sources ADD COLUMN post_scan_action TEXT DEFAULT 'none'"
+        )
+
     # Migration: Add expanded followup columns for enhanced tracking
     followups_columns = {row[1] for row in conn.execute("PRAGMA table_info(followups)").fetchall()}
     if "gmail_message_id" not in followups_columns:
