@@ -851,26 +851,47 @@ def classify_followup_email(subject: str, snippet: str, body: str = "") -> str:
     and may not contain the key phrases (e.g., a rejection phrase buried in
     the middle of the email).
 
+    Classification priority: rejection > offer > assessment > interview > received > update
+    Rejection is checked first because its patterns are the most specific and
+    unambiguous. Interview patterns like "next steps" can appear as polite
+    farewells in rejection emails.
+
     Returns:
-        Email type: 'interview', 'rejection', 'received', 'offer', 'assessment', or 'update'
+        Email type: 'rejection', 'offer', 'assessment', 'interview', 'received', or 'update'
     """
     text = (subject + " " + snippet + " " + body).lower()
 
+    # --- Rejection (checked first — most specific/unambiguous patterns) ---
     if any(
         word in text
         for word in [
-            "interview",
-            "phone screen",
-            "video call",
-            "meet the team",
-            "schedule a call",
-            "next steps",
-            "speak with",
-            "chat with",
+            "unfortunately",
+            "not moving forward",
+            "won't be moving forward",
+            "will not be moving forward",
+            "other candidates",
+            "decided to pursue",
+            "decided not to move forward",
+            "not selected",
+            "will not be moving",
+            "unable to move forward",
+            "chosen to move forward with",
+            "we regret to inform",
+            "regret to inform you",
+            "position has been filled",
+            "position has been closed",
+            "has been closed",
+            "has been cancelled",
+            "opportunity has been closed",
+            "no longer considering",
+            "pursuing other applicants",
+            "not be proceeding",
+            "won't be proceeding",
         ]
     ):
-        return "interview"
+        return "rejection"
 
+    # --- Offer ---
     if any(
         word in text
         for word in [
@@ -890,6 +911,7 @@ def classify_followup_email(subject: str, snippet: str, body: str = "") -> str:
     ):
         return "offer"
 
+    # --- Assessment ---
     if any(
         word in text
         for word in [
@@ -903,31 +925,26 @@ def classify_followup_email(subject: str, snippet: str, body: str = "") -> str:
     ):
         return "assessment"
 
+    # --- Interview ---
     if any(
         word in text
         for word in [
-            "unfortunately",
-            "not moving forward",
-            "won't be moving forward",
-            "will not be moving forward",
-            "other candidates",
-            "decided to pursue",
-            "decided not to move forward",
-            "not selected",
-            "will not be moving",
-            "unable to move forward",
-            "chosen to move forward with",
-            "we regret to inform",
-            "regret to inform you",
-            "position has been filled",
-            "no longer considering",
-            "pursuing other applicants",
-            "not be proceeding",
-            "won't be proceeding",
+            "interview",
+            "phone screen",
+            "video call",
+            "meet the team",
+            "schedule a call",
+            "discuss next steps",
+            "share next steps",
+            "next steps in",
+            "move to next steps",
+            "speak with",
+            "chat with",
         ]
     ):
-        return "rejection"
+        return "interview"
 
+    # --- Received / confirmation ---
     if any(
         word in text
         for word in [
@@ -1031,6 +1048,7 @@ def extract_company_from_email(from_email: str, subject: str) -> str:
         "workable",
         "candidates",
         "applytojob",
+        "myworkday",
         "myworkdayjobs",
         "taleo",
         "breezy",
