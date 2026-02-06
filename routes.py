@@ -4118,13 +4118,13 @@ def register_routes(app):
 
     @app.route("/api/resumes/<resume_id>", methods=["PATCH"])
     def update_resume(resume_id):
-        """Update resume metadata (not content - that requires new variant)."""
+        """Update resume metadata and content."""
         logger.debug(f"[Backend] PATCH /api/resumes/{resume_id}")
         data = request.json
         conn = get_db()
 
-        # Build update query for metadata only
-        allowed_fields = ["name", "focus_areas", "target_roles", "is_active"]
+        # Build update query - now includes content
+        allowed_fields = ["name", "focus_areas", "target_roles", "is_active", "content"]
         updates = []
         params = []
 
@@ -4132,6 +4132,12 @@ def register_routes(app):
             if field in data:
                 updates.append(f"{field} = ?")
                 params.append(data[field])
+
+        # If content is being updated, also update the content hash
+        if "content" in data:
+            content_hash = hashlib.sha256(data["content"].encode()).hexdigest()
+            updates.append("content_hash = ?")
+            params.append(content_hash)
 
         if updates:
             updates.append("updated_at = ?")

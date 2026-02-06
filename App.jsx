@@ -668,6 +668,7 @@ function StatsBar({ stats }) {
 
 function ResumeCard({ resume, onEdit, onDelete, onResearch, expanded, onToggle }) {
   const [researching, setResearching] = useState(false);
+  const [showFullContent, setShowFullContent] = useState(false);
 
   const handleResearch = async (e) => {
     e.stopPropagation();
@@ -675,6 +676,11 @@ function ResumeCard({ resume, onEdit, onDelete, onResearch, expanded, onToggle }
     await onResearch(resume.resume_id, resume.name);
     setResearching(false);
   };
+
+  // Truncate for preview, show full when expanded
+  const previewLength = 500;
+  const isLong = resume.content && resume.content.length > previewLength;
+  const displayContent = showFullContent ? resume.content : resume.content?.substring(0, previewLength);
 
   return (
     <div className="bg-parchment border border-warm-gray overflow-hidden hover:border-copper transition-all">
@@ -712,12 +718,14 @@ function ResumeCard({ resume, onEdit, onDelete, onResearch, expanded, onToggle }
               <button
                 onClick={(e) => { e.stopPropagation(); onEdit(resume); }}
                 className="p-1.5 text-slate hover:bg-warm-gray/50 transition-colors"
+                title="Edit resume"
               >
                 <Edit2 size={16} />
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onDelete(resume.resume_id); }}
                 className="p-1.5 text-rust hover:bg-rust/10 transition-colors"
+                title="Delete resume"
               >
                 <Trash2 size={16} />
               </button>
@@ -727,15 +735,34 @@ function ResumeCard({ resume, onEdit, onDelete, onResearch, expanded, onToggle }
       </div>
 
       {expanded && (
-        <div className="border-t border-warm-gray px-4 py-3 bg-warm-gray/30 space-y-2">
-          <div className="text-xs text-slate">
-            Created: {new Date(resume.created_at).toLocaleDateString()}
+        <div className="border-t border-warm-gray px-4 py-4 bg-warm-gray/30 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-slate">
+              Created: {new Date(resume.created_at).toLocaleDateString()}
+              {resume.content && <span className="ml-2">• {resume.content.length.toLocaleString()} characters</span>}
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(resume); }}
+              className="text-xs text-copper hover:text-copper/80 flex items-center gap-1 px-2 py-1 bg-copper/10 rounded-sm"
+            >
+              <Edit2 size={12} />
+              Edit Resume
+            </button>
           </div>
-          <div className="max-h-40 overflow-y-auto">
-            <p className="text-sm text-ink whitespace-pre-wrap font-mono bg-parchment p-2 border border-warm-gray">
-              {resume.content?.substring(0, 500)}...
-            </p>
+          <div className={`${showFullContent ? 'max-h-[60vh]' : 'max-h-60'} overflow-y-auto`}>
+            <pre className="text-sm text-ink whitespace-pre-wrap font-body bg-parchment p-4 border border-warm-gray leading-relaxed">
+              {displayContent}
+              {isLong && !showFullContent && '...'}
+            </pre>
           </div>
+          {isLong && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowFullContent(!showFullContent); }}
+              className="text-xs text-copper hover:underline"
+            >
+              {showFullContent ? 'Show less' : `Show all (${resume.content.length.toLocaleString()} characters)`}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -974,6 +1001,156 @@ function ResumeUploadModal({ onClose, onSave }) {
                 className="flex-1 px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px disabled:opacity-50 transition-all"
               >
                 {saving ? 'Saving...' : 'Save Resume'}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={saving}
+                className="px-4 py-2 bg-transparent border border-warm-gray text-slate rounded-none uppercase tracking-wide text-sm font-body hover:bg-warm-gray/50 disabled:opacity-50 transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Resume Edit Modal Component
+function ResumeEditModal({ resume, onClose, onSave }) {
+  const [formData, setFormData] = useState({
+    name: resume?.name || '',
+    focus_areas: resume?.focus_areas || '',
+    target_roles: resume?.target_roles || '',
+    content: resume?.content || ''
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!formData.name) {
+      setError('Resume name is required');
+      return;
+    }
+    if (!formData.content) {
+      setError('Resume content is required');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_BASE}/resumes/${resume.resume_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          focus_areas: formData.focus_areas,
+          target_roles: formData.target_roles,
+          content: formData.content
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        onSave();
+        onClose();
+      } else {
+        setError(data.error || 'Failed to update resume');
+      }
+    } catch (err) {
+      setError('Network error: ' + err.message);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-parchment border border-warm-gray shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display text-2xl text-ink">Edit Resume</h2>
+            <span className="text-xs text-slate bg-warm-gray/50 px-2 py-1 rounded-sm">
+              {formData.content.length.toLocaleString()} characters
+            </span>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-3 bg-rust/10 border-l-[3px] border-l-rust flex items-start gap-2">
+              <AlertCircle size={20} className="text-rust flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-rust font-body">{error}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-body font-medium text-ink mb-1">
+                  Resume Name *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Backend Python AWS"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-body font-medium text-ink mb-1">
+                  Focus Areas
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Python, AWS, FastAPI"
+                  value={formData.focus_areas}
+                  onChange={(e) => setFormData({ ...formData, focus_areas: e.target.value })}
+                  className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-body font-medium text-ink mb-1">
+                  Target Roles
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Senior Developer, Tech Lead"
+                  value={formData.target_roles}
+                  onChange={(e) => setFormData({ ...formData, target_roles: e.target.value })}
+                  className="w-full px-3 py-2 border-b border-warm-gray bg-transparent text-ink font-body placeholder-slate focus:border-b-copper focus:bg-warm-gray/50 transition-colors outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-body font-medium text-ink mb-1">
+                Resume Content *
+              </label>
+              <textarea
+                placeholder="Paste or edit your resume content here..."
+                value={formData.content}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                className="w-full px-3 py-2 border border-warm-gray bg-warm-gray/20 text-ink font-body text-sm placeholder-slate focus:border-copper focus:bg-parchment transition-colors outline-none resize-y leading-relaxed"
+                rows={20}
+                required
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t border-warm-gray">
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex-1 px-4 py-2 bg-copper text-parchment rounded-none uppercase tracking-wide text-sm font-body font-semibold hover:bg-copper/90 active:translate-y-px disabled:opacity-50 transition-all"
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
               </button>
               <button
                 type="button"
@@ -1694,6 +1871,7 @@ export default function App() {
   const [showAddExternal, setShowAddExternal] = useState(false);
   const [resumes, setResumes] = useState([]);
   const [showResumeModal, setShowResumeModal] = useState(false);
+  const [editingResume, setEditingResume] = useState(null);
   const [batchRecommending, setBatchRecommending] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [trackedCompanies, setTrackedCompanies] = useState([]);
@@ -2681,7 +2859,7 @@ export default function App() {
                       resume={resume}
                       expanded={expandedJob === resume.resume_id}
                       onToggle={() => setExpandedJob(expandedJob === resume.resume_id ? null : resume.resume_id)}
-                      onEdit={() => alert('Edit functionality coming soon!')}
+                      onEdit={(resume) => setEditingResume(resume)}
                       onDelete={handleDeleteResume}
                       onResearch={handleResearchForResume}
                     />
@@ -3600,6 +3778,15 @@ export default function App() {
       {showResumeModal && (
         <ResumeUploadModal
           onClose={() => setShowResumeModal(false)}
+          onSave={fetchResumes}
+        />
+      )}
+
+      {/* Resume Edit Modal */}
+      {editingResume && (
+        <ResumeEditModal
+          resume={editingResume}
+          onClose={() => setEditingResume(null)}
           onSave={fetchResumes}
         />
       )}
