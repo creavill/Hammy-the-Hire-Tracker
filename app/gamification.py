@@ -25,171 +25,166 @@ ACHIEVEMENTS = {
         "description": "Complete your first email scan",
         "icon": "🚀",
         "points": 10,
-        "category": "getting_started"
+        "category": "getting_started",
     },
     "first_application": {
         "name": "In the Game",
         "description": "Mark your first job as applied",
         "icon": "📝",
         "points": 15,
-        "category": "getting_started"
+        "category": "getting_started",
     },
     "upload_resume": {
         "name": "Armed & Ready",
         "description": "Upload your first resume",
         "icon": "📄",
         "points": 10,
-        "category": "getting_started"
+        "category": "getting_started",
     },
-
     # Volume achievements
     "jobs_10": {
         "name": "Getting Warmed Up",
         "description": "Track 10 jobs",
         "icon": "🔥",
         "points": 20,
-        "category": "volume"
+        "category": "volume",
     },
     "jobs_50": {
         "name": "On a Roll",
         "description": "Track 50 jobs",
         "icon": "⚡",
         "points": 50,
-        "category": "volume"
+        "category": "volume",
     },
     "jobs_100": {
         "name": "Century Club",
         "description": "Track 100 jobs",
         "icon": "💯",
         "points": 100,
-        "category": "volume"
+        "category": "volume",
     },
     "jobs_500": {
         "name": "Job Hunter Elite",
         "description": "Track 500 jobs",
         "icon": "🏆",
         "points": 250,
-        "category": "volume"
+        "category": "volume",
     },
     "applied_10": {
         "name": "Putting Yourself Out There",
         "description": "Apply to 10 jobs",
         "icon": "📮",
         "points": 30,
-        "category": "volume"
+        "category": "volume",
     },
     "applied_25": {
         "name": "Persistence Pays",
         "description": "Apply to 25 jobs",
         "icon": "💪",
         "points": 75,
-        "category": "volume"
+        "category": "volume",
     },
     "applied_50": {
         "name": "Application Machine",
         "description": "Apply to 50 jobs",
         "icon": "🤖",
         "points": 150,
-        "category": "volume"
+        "category": "volume",
     },
-
     # Quality achievements
     "high_scorer": {
         "name": "Quality Over Quantity",
         "description": "Apply to a job with 90+ score",
         "icon": "⭐",
         "points": 25,
-        "category": "quality"
+        "category": "quality",
     },
     "perfect_match": {
         "name": "Perfect Match",
         "description": "Apply to a job with 100 score",
         "icon": "💎",
         "points": 50,
-        "category": "quality"
+        "category": "quality",
     },
     "selective": {
         "name": "Selective Hunter",
         "description": "Apply to 5 jobs with 80+ scores",
         "icon": "🎯",
         "points": 40,
-        "category": "quality"
+        "category": "quality",
     },
-
     # Streak achievements
     "streak_3": {
         "name": "Getting Consistent",
         "description": "3-day activity streak",
         "icon": "🔥",
         "points": 20,
-        "category": "streak"
+        "category": "streak",
     },
     "streak_7": {
         "name": "Week Warrior",
         "description": "7-day activity streak",
         "icon": "📅",
         "points": 50,
-        "category": "streak"
+        "category": "streak",
     },
     "streak_14": {
         "name": "Two Week Champion",
         "description": "14-day activity streak",
         "icon": "🏅",
         "points": 100,
-        "category": "streak"
+        "category": "streak",
     },
     "streak_30": {
         "name": "Monthly Master",
         "description": "30-day activity streak",
         "icon": "👑",
         "points": 250,
-        "category": "streak"
+        "category": "streak",
     },
-
     # Milestone achievements
     "first_interview": {
         "name": "Foot in the Door",
         "description": "Get your first interview",
         "icon": "🚪",
         "points": 100,
-        "category": "milestone"
+        "category": "milestone",
     },
     "first_offer": {
         "name": "Victory!",
         "description": "Receive your first job offer",
         "icon": "🎉",
         "points": 500,
-        "category": "milestone"
+        "category": "milestone",
     },
     "multiple_offers": {
         "name": "In Demand",
         "description": "Receive multiple job offers",
         "icon": "🌟",
         "points": 300,
-        "category": "milestone"
+        "category": "milestone",
     },
-
     # Daily goal achievements
     "daily_goal_5": {
         "name": "Goal Getter",
         "description": "Complete daily goals 5 times",
         "icon": "✅",
         "points": 30,
-        "category": "daily"
+        "category": "daily",
     },
     "daily_goal_10": {
         "name": "Consistent Achiever",
         "description": "Complete daily goals 10 times",
         "icon": "🎖️",
         "points": 75,
-        "category": "daily"
+        "category": "daily",
     },
     "daily_goal_30": {
         "name": "Monthly Champion",
         "description": "Complete daily goals 30 times",
         "icon": "🏆",
         "points": 200,
-        "category": "daily"
+        "category": "daily",
     },
 }
 
@@ -200,28 +195,28 @@ DAILY_GOALS = {
         "description": "Review {target} new jobs",
         "default_target": 5,
         "points": 10,
-        "icon": "👀"
+        "icon": "👀",
     },
     "apply_jobs": {
         "name": "Apply to Jobs",
         "description": "Apply to {target} jobs",
         "default_target": 2,
         "points": 20,
-        "icon": "📝"
+        "icon": "📝",
     },
     "scan_emails": {
         "name": "Stay Updated",
         "description": "Scan for new job alerts",
         "default_target": 1,
         "points": 5,
-        "icon": "📧"
+        "icon": "📧",
     },
     "archive_old": {
         "name": "Clean House",
         "description": "Archive {target} old jobs",
         "default_target": 3,
         "points": 5,
-        "icon": "🗂️"
+        "icon": "🗂️",
     },
 }
 
@@ -287,7 +282,7 @@ def init_gamification_tables():
         now = datetime.now().isoformat()
         conn.execute(
             "INSERT INTO user_stats (total_points, current_streak, longest_streak, level, created_at, updated_at) VALUES (0, 0, 0, 1, ?, ?)",
-            (now, now)
+            (now, now),
         )
 
     conn.commit()
@@ -369,8 +364,7 @@ def unlock_achievement(achievement_id: str) -> Optional[Dict]:
 
     # Check if already unlocked
     existing = conn.execute(
-        "SELECT * FROM user_achievements WHERE achievement_id = ?",
-        (achievement_id,)
+        "SELECT * FROM user_achievements WHERE achievement_id = ?", (achievement_id,)
     ).fetchone()
 
     if existing:
@@ -383,13 +377,13 @@ def unlock_achievement(achievement_id: str) -> Optional[Dict]:
     # Insert achievement
     conn.execute(
         "INSERT INTO user_achievements (achievement_id, unlocked_at, points_awarded) VALUES (?, ?, ?)",
-        (achievement_id, now, achievement["points"])
+        (achievement_id, now, achievement["points"]),
     )
 
     # Award points
     conn.execute(
         "UPDATE user_stats SET total_points = total_points + ?, updated_at = ?",
-        (achievement["points"], now)
+        (achievement["points"], now),
     )
 
     conn.commit()
@@ -413,24 +407,18 @@ def get_daily_goals(date: str = None) -> List[Dict]:
     conn.row_factory = sqlite3.Row
 
     # Check if goals exist for today
-    goals = conn.execute(
-        "SELECT * FROM daily_progress WHERE date = ?",
-        (date,)
-    ).fetchall()
+    goals = conn.execute("SELECT * FROM daily_progress WHERE date = ?", (date,)).fetchall()
 
     if not goals:
         # Create default goals for today
         for goal_type, goal_data in DAILY_GOALS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO daily_progress (date, goal_type, target, current, completed) VALUES (?, ?, ?, 0, 0)",
-                (date, goal_type, goal_data["default_target"])
+                (date, goal_type, goal_data["default_target"]),
             )
         conn.commit()
 
-        goals = conn.execute(
-            "SELECT * FROM daily_progress WHERE date = ?",
-            (date,)
-        ).fetchall()
+        goals = conn.execute("SELECT * FROM daily_progress WHERE date = ?", (date,)).fetchall()
 
     conn.close()
 
@@ -439,13 +427,19 @@ def get_daily_goals(date: str = None) -> List[Dict]:
         goal_dict = dict(goal)
         goal_type = goal_dict["goal_type"]
         if goal_type in DAILY_GOALS:
-            goal_dict.update({
-                "name": DAILY_GOALS[goal_type]["name"],
-                "description": DAILY_GOALS[goal_type]["description"].format(target=goal_dict["target"]),
-                "icon": DAILY_GOALS[goal_type]["icon"],
-                "max_points": DAILY_GOALS[goal_type]["points"],
-                "progress_percent": min(100, round(goal_dict["current"] / goal_dict["target"] * 100, 1)),
-            })
+            goal_dict.update(
+                {
+                    "name": DAILY_GOALS[goal_type]["name"],
+                    "description": DAILY_GOALS[goal_type]["description"].format(
+                        target=goal_dict["target"]
+                    ),
+                    "icon": DAILY_GOALS[goal_type]["icon"],
+                    "max_points": DAILY_GOALS[goal_type]["points"],
+                    "progress_percent": min(
+                        100, round(goal_dict["current"] / goal_dict["target"] * 100, 1)
+                    ),
+                }
+            )
         result.append(goal_dict)
 
     return result
@@ -459,8 +453,7 @@ def update_daily_progress(goal_type: str, increment: int = 1) -> Dict:
 
     # Ensure goal exists
     goal = conn.execute(
-        "SELECT * FROM daily_progress WHERE date = ? AND goal_type = ?",
-        (date, goal_type)
+        "SELECT * FROM daily_progress WHERE date = ? AND goal_type = ?", (date, goal_type)
     ).fetchone()
 
     if not goal:
@@ -468,12 +461,11 @@ def update_daily_progress(goal_type: str, increment: int = 1) -> Dict:
         target = DAILY_GOALS.get(goal_type, {}).get("default_target", 1)
         conn.execute(
             "INSERT INTO daily_progress (date, goal_type, target, current, completed) VALUES (?, ?, ?, 0, 0)",
-            (date, goal_type, target)
+            (date, goal_type, target),
         )
         conn.commit()
         goal = conn.execute(
-            "SELECT * FROM daily_progress WHERE date = ? AND goal_type = ?",
-            (date, goal_type)
+            "SELECT * FROM daily_progress WHERE date = ? AND goal_type = ?", (date, goal_type)
         ).fetchone()
 
     goal_dict = dict(goal)
@@ -488,12 +480,12 @@ def update_daily_progress(goal_type: str, increment: int = 1) -> Dict:
         points_earned = DAILY_GOALS.get(goal_type, {}).get("points", 0)
         conn.execute(
             "UPDATE user_stats SET total_points = total_points + ?, daily_goals_completed = daily_goals_completed + 1, updated_at = ?",
-            (points_earned, datetime.now().isoformat())
+            (points_earned, datetime.now().isoformat()),
         )
 
     conn.execute(
         "UPDATE daily_progress SET current = ?, completed = ?, points_earned = ? WHERE date = ? AND goal_type = ?",
-        (new_current, 1 if is_completed else 0, points_earned, date, goal_type)
+        (new_current, 1 if is_completed else 0, points_earned, date, goal_type),
     )
 
     conn.commit()
@@ -518,27 +510,27 @@ def record_activity(activity_type: str = "general"):
     conn = sqlite3.connect(DB_PATH)
 
     # Upsert activity log
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO activity_log (date, actions_count)
         VALUES (?, 1)
         ON CONFLICT(date) DO UPDATE SET actions_count = actions_count + 1
-    """, (date,))
+    """,
+        (date,),
+    )
 
     # Update specific counters
     if activity_type == "review_jobs":
         conn.execute(
-            "UPDATE activity_log SET jobs_reviewed = jobs_reviewed + 1 WHERE date = ?",
-            (date,)
+            "UPDATE activity_log SET jobs_reviewed = jobs_reviewed + 1 WHERE date = ?", (date,)
         )
     elif activity_type == "apply_jobs":
         conn.execute(
-            "UPDATE activity_log SET jobs_applied = jobs_applied + 1 WHERE date = ?",
-            (date,)
+            "UPDATE activity_log SET jobs_applied = jobs_applied + 1 WHERE date = ?", (date,)
         )
     elif activity_type == "scan_emails":
         conn.execute(
-            "UPDATE activity_log SET scans_completed = scans_completed + 1 WHERE date = ?",
-            (date,)
+            "UPDATE activity_log SET scans_completed = scans_completed + 1 WHERE date = ?", (date,)
         )
 
     conn.commit()
@@ -555,9 +547,7 @@ def _update_streak(conn):
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     # Check if there was activity today
-    today_activity = conn.execute(
-        "SELECT * FROM activity_log WHERE date = ?", (today,)
-    ).fetchone()
+    today_activity = conn.execute("SELECT * FROM activity_log WHERE date = ?", (today,)).fetchone()
 
     if not today_activity:
         return
@@ -585,7 +575,7 @@ def _update_streak(conn):
 
     conn.execute(
         "UPDATE user_stats SET current_streak = ?, longest_streak = ?, last_activity_date = ?, updated_at = ?",
-        (new_streak, longest_streak, today, datetime.now().isoformat())
+        (new_streak, longest_streak, today, datetime.now().isoformat()),
     )
 
     # Check streak achievements
@@ -750,27 +740,35 @@ def get_dashboard_stats() -> Dict:
 
     # This week's stats
     week_ago = (datetime.now() - timedelta(days=7)).isoformat()
-    week_stats = conn.execute("""
+    week_stats = conn.execute(
+        """
         SELECT
             COUNT(*) as jobs_this_week,
             SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) as applied_this_week
         FROM jobs
         WHERE is_filtered = 0 AND created_at >= ?
-    """, (week_ago,)).fetchone()
+    """,
+        (week_ago,),
+    ).fetchone()
 
     # Today's stats
     today = datetime.now().strftime("%Y-%m-%d")
-    today_stats = conn.execute("""
+    today_stats = conn.execute(
+        """
         SELECT
             COUNT(*) as jobs_today,
             SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) as applied_today
         FROM jobs
         WHERE is_filtered = 0 AND date(created_at) = ?
-    """, (today,)).fetchone()
+    """,
+        (today,),
+    ).fetchone()
 
     # Response rate
     applied_total = job_stats["applied"] or 0
-    responses = (job_stats["interviewing"] or 0) + (job_stats["offers"] or 0) + (job_stats["rejected"] or 0)
+    responses = (
+        (job_stats["interviewing"] or 0) + (job_stats["offers"] or 0) + (job_stats["rejected"] or 0)
+    )
     response_rate = round(responses / applied_total * 100, 1) if applied_total > 0 else 0
 
     # Follow-up stats
