@@ -180,6 +180,17 @@ def _load_email_sources():
         List of source configurations with parser info
     """
     conn = sqlite3.connect(DB_PATH)
+
+    # Check if table exists
+    table_check = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='custom_email_sources'"
+    ).fetchone()
+
+    if not table_check:
+        logger.error("custom_email_sources table does not exist! Database not initialized?")
+        conn.close()
+        return []
+
     sources = conn.execute("""
         SELECT id, name, sender_email, sender_pattern, subject_keywords,
                is_builtin, category, parser_class, post_scan_action
@@ -187,9 +198,16 @@ def _load_email_sources():
         WHERE enabled = 1
         ORDER BY is_builtin DESC, name
     """).fetchall()
+
+    # Log warning if no sources found
+    if not sources:
+        all_sources = conn.execute("SELECT COUNT(*) FROM custom_email_sources").fetchone()[0]
+        logger.warning(f"No enabled email sources found! Total sources in DB: {all_sources}")
+        logger.warning("Make sure to run database initialization to seed built-in sources.")
+
     conn.close()
 
-    return [
+    result = [
         {
             "id": s[0],
             "name": s[1],
@@ -203,6 +221,9 @@ def _load_email_sources():
         }
         for s in sources
     ]
+
+    logger.info(f"Loaded {len(result)} enabled email sources from database")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -271,13 +292,18 @@ def _get_after_date(days_back: int) -> str:
             last_date = datetime.fromisoformat(last_scan[0])
             last_date = last_date + timedelta(seconds=1)
             after_date = last_date.strftime("%Y/%m/%d")
-            logger.info(f"Scanning emails after last scan: {after_date}")
+            logger.info(f"=== SCAN DATE RANGE ===")
+            logger.info(f"  Last scan: {last_scan[0]}")
+            logger.info(f"  Looking for emails after: {after_date}")
+            logger.info(f"  NOTE: Gmail 'after:' uses date only, not time. Emails from {after_date} onward will be checked.")
             return after_date
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Error parsing last scan date: {e}")
 
     after_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y/%m/%d")
-    logger.info(f"First scan - looking back {days_back} days: {after_date}")
+    logger.info(f"=== SCAN DATE RANGE (First Scan) ===")
+    logger.info(f"  No previous scan found - looking back {days_back} days")
+    logger.info(f"  Scanning emails after: {after_date}")
     return after_date
 
 
@@ -292,13 +318,20 @@ def _phase1_job_alerts(service, after_date: str, email_sources: list) -> Dict:
 
     Returns dict with keys: jobs, total_emails, cleaned_emails, processed_ids
     """
+    # Log all loaded sources for debugging
+    logger.info(f"Phase 1: Processing {len(email_sources)} email sources")
+    for src in email_sources:
+        logger.info(f"  Source: {src['name']} | Pattern: {src.get('sender_pattern', 'N/A')} | Email: {src.get('sender_email', 'N/A')}")
+
     source_queries = []
     for source in email_sources:
         query = _build_query_for_source(source, after_date)
         if query:
             parser = get_parser_for_source(source)
             source_queries.append({"query": query, "source": source, "parser": parser})
-            logger.debug(f"Source '{source['name']}': {query}")
+            logger.info(f"  Query for '{source['name']}': {query}")
+        else:
+            logger.warning(f"  No query built for '{source['name']}' - missing sender info?")
 
     all_jobs = []
     seen_job_ids = set()
@@ -322,12 +355,15 @@ def _phase1_job_alerts(service, after_date: str, email_sources: list) -> Dict:
             )
             messages = results.get("messages", [])
             total_emails += len(messages)
+            logger.info(f"  [{source_name}] Found {len(messages)} emails matching query")
 
             source_jobs = 0
+            skipped_processed = 0
             for msg_info in messages:
                 msg_id = msg_info["id"]
 
                 if is_email_processed(msg_id):
+                    skipped_processed += 1
                     continue
 
                 try:
@@ -398,8 +434,8 @@ def _phase1_job_alerts(service, after_date: str, email_sources: list) -> Dict:
                     logger.error(f"Error parsing email {msg_id} for {source_name}: {e}")
                     continue
 
-            if source_jobs > 0:
-                logger.info(f"Found {source_jobs} jobs from {source_name}")
+            # Summary for this source
+            logger.info(f"  [{source_name}] Result: {source_jobs} jobs extracted, {skipped_processed} already processed")
 
         except Exception as e:
             logger.error(f"Query failed for {source_name}: {e}")
