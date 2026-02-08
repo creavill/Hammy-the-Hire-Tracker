@@ -1189,7 +1189,7 @@ export default function JobDetailPage() {
                       </div>
                       <div className="flex items-center gap-1">
                         <button onClick={() => handleCopyToClipboard(hiringManagerInfo.linkedin_search)} className="p-2 text-copper hover:text-copper/80 transition-colors" title="Copy"><Copy size={16} /></button>
-                        <a href={`https://www.linkedin.com/search/results/people/?keywords=${"$"}{encodeURIComponent(hiringManagerInfo.linkedin_search)}`} target="_blank" rel="noopener noreferrer" className="p-2 text-copper hover:text-copper/80"><ExternalLink size={16} /></a>
+                        <a href={`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(hiringManagerInfo.linkedin_search)}`} target="_blank" rel="noopener noreferrer" className="p-2 text-copper hover:text-copper/80"><ExternalLink size={16} /></a>
                       </div>
                     </div>
                   )}
