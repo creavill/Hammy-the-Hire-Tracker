@@ -26,7 +26,8 @@ import {
   Copy,
   TrendingUp,
   AlertCircle,
-  Award
+  Award,
+  RefreshCw
 } from 'lucide-react';
 
 const API_BASE = '/api';
@@ -268,6 +269,7 @@ export default function JobDetailPage() {
   const [findingHM, setFindingHM] = useState(false);
   const [hiringManagerInfo, setHiringManagerInfo] = useState(null);
   const [archiving, setArchiving] = useState(false);
+  const [rescoring, setRescoring] = useState(false);
 
   const fetchJob = useCallback(async () => {
     setLoading(true);
@@ -394,12 +396,36 @@ export default function JobDetailPage() {
   const handleArchive = async () => {
     setArchiving(true);
     try {
-      await fetch(`${API_BASE}/jobs/${jobId}/archive`, { method: 'POST' });
-      navigate('/');
+      const res = await fetch(`${API_BASE}/jobs/${jobId}/archive`, { method: 'POST' });
+      if (res.ok) {
+        navigate('/');
+      } else {
+        const data = await res.json();
+        console.error('Archive failed:', data.error || 'Unknown error');
+        setArchiving(false);
+      }
     } catch (err) {
       console.error('Archive failed:', err);
       setArchiving(false);
     }
+  };
+
+  const handleRescore = async () => {
+    setRescoring(true);
+    try {
+      const res = await fetch(`${API_BASE}/jobs/${jobId}/rescore`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        // Update the job with the new score
+        setJob(prev => ({ ...prev, score: data.new_score }));
+      } else {
+        const data = await res.json();
+        console.error('Rescore failed:', data.error || 'Unknown error');
+      }
+    } catch (err) {
+      console.error('Rescore failed:', err);
+    }
+    setRescoring(false);
   };
 
   const handleFindHiringManager = async () => {
@@ -959,6 +985,24 @@ export default function JobDetailPage() {
                   <>
                     <Users size={16} />
                     Find Hiring Manager
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={handleRescore}
+                disabled={rescoring}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-transparent border border-cream text-cream font-body uppercase tracking-wide text-sm hover:bg-cream/10 disabled:opacity-50 transition-colors rounded-sm"
+              >
+                {rescoring ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Rescoring...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw size={16} />
+                    Rescore Job
                   </>
                 )}
               </button>
