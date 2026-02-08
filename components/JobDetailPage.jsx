@@ -1168,7 +1168,6 @@ export default function JobDetailPage() {
               </div>
             </div>
           )}
-        </div>
 
           {/* Hiring Manager Info - Full Width */}
           {hiringManagerInfo && (
