@@ -1,20 +1,384 @@
 """
-Job Analyzer - Extracts experience requirements and analyzes candidate fit
+Job Analyzer - Extracts structured requirements and analyzes candidate fit
 
 This module provides functions to:
 1. Extract specific experience requirements from job descriptions
 2. Extract required and preferred skills
-3. Analyze gaps between candidate resume and job requirements
-4. Identify pros/strengths that match job requirements
+3. Extract education, certification, and clearance requirements
+4. Analyze gaps between candidate resume and job requirements
 5. Create tech stack overlap analysis
 """
 
 import re
 import json
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def extract_structured_requirements(job_description: str) -> Dict[str, Any]:
+    """
+    Extract all structured requirements from a job description.
+
+    Returns a comprehensive dictionary with:
+    - experience: List of experience requirements with years
+    - education: List of education requirements
+    - certifications: List of required/preferred certifications
+    - clearance: Security clearance requirements
+    - skills_required: List of required technical skills
+    - skills_preferred: List of preferred/nice-to-have skills
+    - responsibilities: Key job responsibilities
+    """
+    if not job_description:
+        return {}
+
+    text = job_description
+    text_lower = text.lower()
+
+    result = {
+        "experience": [],
+        "education": [],
+        "certifications": [],
+        "clearance": None,
+        "skills_required": [],
+        "skills_preferred": [],
+        "responsibilities": [],
+    }
+
+    # ===== EXPERIENCE REQUIREMENTS =====
+    experience_patterns = [
+        # "5+ years of AWS experience"
+        (
+            r"(\d+)\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience\s+)?(?:with|in|of)?\s*([A-Za-z0-9\s\.\+\#\/\-]+?)(?:\s+experience)?(?:[,\.\n]|$)",
+            "years_skill",
+        ),
+        # "Bachelor's and 2 years experience"
+        (
+            r"(?:bachelor'?s?|master'?s?|phd)\s+(?:degree\s+)?(?:and|with)\s+(\d+)\+?\s*(?:years?|yrs?)",
+            "edu_years",
+        ),
+        # "minimum 5 years"
+        (
+            r"(?:minimum|at\s+least|min)\s+(\d+)\+?\s*(?:years?|yrs?)\s+(?:of\s+)?([A-Za-z0-9\s\.\+\#\/\-]+?)(?:\s+experience)?",
+            "min_years",
+        ),
+        # "5-7 years of experience"
+        (
+            r"(\d+)\s*[-–]\s*(\d+)\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience\s+)?(?:with|in)?\s*([A-Za-z0-9\s\.\+\#\/\-]+)?",
+            "range",
+        ),
+    ]
+
+    seen_exp = set()
+    for pattern, ptype in experience_patterns:
+        for match in re.finditer(pattern, text_lower, re.IGNORECASE):
+            groups = match.groups()
+            exp_item = {}
+
+            if ptype == "years_skill" and len(groups) >= 2:
+                years = int(groups[0])
+                skill = groups[1].strip()
+                if skill and len(skill) > 2 and len(skill) < 50:
+                    exp_item = {"years": years, "skill": skill.title(), "type": "specific"}
+            elif ptype == "min_years" and len(groups) >= 2:
+                years = int(groups[0])
+                skill = groups[1].strip() if groups[1] else "general"
+                exp_item = {"years": years, "skill": skill.title(), "type": "minimum"}
+            elif ptype == "range" and len(groups) >= 2:
+                years_min = int(groups[0])
+                years_max = int(groups[1])
+                skill = groups[2].strip() if len(groups) > 2 and groups[2] else "general experience"
+                exp_item = {
+                    "years": years_min,
+                    "years_max": years_max,
+                    "skill": skill.title(),
+                    "type": "range",
+                }
+
+            if exp_item and exp_item.get("skill"):
+                key = f"{exp_item.get('years', 0)}_{exp_item.get('skill', '').lower()[:20]}"
+                if key not in seen_exp:
+                    seen_exp.add(key)
+                    result["experience"].append(exp_item)
+
+    # ===== EDUCATION REQUIREMENTS =====
+    education_patterns = [
+        (
+            r"(?:bachelor'?s?|bs|ba|b\.s\.|b\.a\.)\s*(?:degree)?\s*(?:in)?\s*([A-Za-z\s]+)?",
+            "bachelor",
+        ),
+        (
+            r"(?:master'?s?|ms|ma|m\.s\.|m\.a\.|mba)\s*(?:degree)?\s*(?:in)?\s*([A-Za-z\s]+)?",
+            "master",
+        ),
+        (r"(?:ph\.?d\.?|doctorate)\s*(?:degree)?\s*(?:in)?\s*([A-Za-z\s]+)?", "phd"),
+        (r"(?:associate'?s?|as|aa)\s*(?:degree)?\s*(?:in)?\s*([A-Za-z\s]+)?", "associate"),
+    ]
+
+    edu_levels = {"phd": 4, "master": 3, "bachelor": 2, "associate": 1}
+    seen_edu = set()
+
+    for pattern, level in education_patterns:
+        for match in re.finditer(pattern, text_lower):
+            field = match.group(1).strip() if match.group(1) else ""
+            field = re.sub(
+                r"\s*(or|and|with|required|preferred).*", "", field, flags=re.IGNORECASE
+            ).strip()
+            if len(field) > 50:
+                field = ""
+            edu_key = level
+            if edu_key not in seen_edu:
+                seen_edu.add(edu_key)
+                result["education"].append(
+                    {
+                        "level": level.title(),
+                        "field": field.title() if field else None,
+                        "priority": edu_levels.get(level, 0),
+                    }
+                )
+
+    # Sort by priority
+    result["education"].sort(key=lambda x: x.get("priority", 0), reverse=True)
+
+    # ===== CERTIFICATIONS =====
+    cert_patterns = [
+        r"(AWS\s+(?:Solutions?\s+Architect|SysOps\s+Administrator|Developer|DevOps\s+Engineer|Cloud\s+Practitioner)(?:\s+(?:Associate|Professional))?)",
+        r"(Azure\s+(?:Administrator|Developer|Solutions?\s+Architect|DevOps\s+Engineer)(?:\s+(?:Associate|Expert))?)",
+        r"(GCP\s+(?:Cloud\s+Architect|Cloud\s+Engineer|Data\s+Engineer))",
+        r"(Certified\s+Kubernetes\s+Administrator|CKA)",
+        r"(Certified\s+Kubernetes\s+(?:Application\s+Developer|Security\s+Specialist)|CKAD|CKS)",
+        r"(CompTIA\s+(?:Security\+|Network\+|A\+|Cloud\+|Linux\+))",
+        r"(Security\+|Sec\+)",
+        r"(CISSP|CISM|CEH|OSCP)",
+        r"(PMP|Scrum\s+Master|CSM|SAFe\s+Agilist)",
+        r"(Terraform\s+(?:Associate|Professional))",
+        r"(CCNA|CCNP|CCIE)",
+    ]
+
+    seen_certs = set()
+    for pattern in cert_patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            cert = match.group(1).strip()
+            cert_lower = cert.lower()
+            if cert_lower not in seen_certs:
+                seen_certs.add(cert_lower)
+                # Determine if required or preferred
+                context_start = max(0, match.start() - 100)
+                context = text_lower[context_start : match.end() + 50]
+                is_required = any(w in context for w in ["required", "must have", "mandatory"])
+                result["certifications"].append({"name": cert, "required": is_required})
+
+    # ===== SECURITY CLEARANCE =====
+    clearance_patterns = [
+        (r"(TS/SCI|Top\s+Secret/SCI)", "TS/SCI"),
+        (r"(Top\s+Secret)", "Top Secret"),
+        (r"(Secret\s+clearance)", "Secret"),
+        (r"(Public\s+Trust)", "Public Trust"),
+    ]
+
+    for pattern, level in clearance_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            context = text_lower
+            must_obtain = (
+                "able to obtain" in context or "must obtain" in context or "eligibility" in context
+            )
+            result["clearance"] = {
+                "level": level,
+                "must_obtain": must_obtain,
+                "current_required": not must_obtain,
+            }
+            break
+
+    # ===== TECHNICAL SKILLS =====
+    # Use the existing TECH_SKILLS dictionary for skill extraction
+    all_skills = extract_all_skills_from_text(job_description)
+
+    # Try to separate required vs preferred based on context
+    required_section_match = re.search(
+        r"(?:required|must\s+have|minimum|essential)[\s\w]*(?:qualifications?|requirements?|skills?)?:?\s*([\s\S]*?)(?=(?:preferred|nice|bonus|desired|about\s+us|\n\n\n|benefits|$))",
+        text_lower,
+        re.IGNORECASE,
+    )
+    preferred_section_match = re.search(
+        r"(?:preferred|nice\s+to\s+have|bonus|desired)[\s\w]*(?:qualifications?|requirements?|skills?)?:?\s*([\s\S]*?)(?=(?:about\s+us|\n\n\n|benefits|equal\s+opportunity|$))",
+        text_lower,
+        re.IGNORECASE,
+    )
+
+    if required_section_match:
+        required_skills = extract_all_skills_from_text(required_section_match.group(1))
+        for skills in required_skills.values():
+            result["skills_required"].extend(
+                [s.title() if len(s) > 3 else s.upper() for s in skills]
+            )
+
+    if preferred_section_match:
+        preferred_skills = extract_all_skills_from_text(preferred_section_match.group(1))
+        for skills in preferred_skills.values():
+            s_list = [s.title() if len(s) > 3 else s.upper() for s in skills]
+            result["skills_preferred"].extend(
+                [s for s in s_list if s not in result["skills_required"]]
+            )
+
+    # If no sections found, put all skills as required
+    if not result["skills_required"] and not result["skills_preferred"]:
+        for skills in all_skills.values():
+            result["skills_required"].extend(
+                [s.title() if len(s) > 3 else s.upper() for s in skills]
+            )
+
+    # Dedupe
+    result["skills_required"] = list(dict.fromkeys(result["skills_required"]))
+    result["skills_preferred"] = list(dict.fromkeys(result["skills_preferred"]))
+
+    # ===== RESPONSIBILITIES (first few bullet points) =====
+    resp_patterns = [
+        r"(?:responsibilities|duties|what\s+you(?:'ll)?\s+do)[\s:]*\n((?:[\s]*[-•*]\s*[^\n]+\n?){1,10})",
+        r"(?:as\s+a\s+\w+,?\s+you\s+will)[\s:]*\n((?:[\s]*[-•*]\s*[^\n]+\n?){1,10})",
+    ]
+
+    for pattern in resp_patterns:
+        match = re.search(pattern, text_lower, re.IGNORECASE)
+        if match:
+            bullets = re.findall(r"[-•*]\s*([^\n]+)", match.group(1))
+            result["responsibilities"] = [
+                b.strip().capitalize() for b in bullets[:8] if len(b) > 10
+            ]
+            break
+
+    return result
+
+
+def match_requirements_to_resume(requirements: Dict[str, Any], resume_text: str) -> Dict[str, Any]:
+    """
+    Match extracted requirements against a resume to show what the candidate has vs lacks.
+
+    Returns:
+    - matched: Requirements the candidate appears to meet
+    - missing: Requirements the candidate appears to lack
+    - match_summary: Quick summary stats
+    """
+    if not requirements or not resume_text:
+        return {"matched": [], "missing": [], "match_summary": {}}
+
+    resume_lower = resume_text.lower()
+    matched = []
+    missing = []
+
+    # Check experience requirements
+    for exp in requirements.get("experience", []):
+        skill_lower = exp.get("skill", "").lower()
+        years = exp.get("years", 0)
+
+        # Check if skill is in resume
+        skill_in_resume = any(
+            s in resume_lower
+            for s in [skill_lower, skill_lower.replace(" ", ""), skill_lower.replace("-", " ")]
+        )
+
+        item = {
+            "type": "experience",
+            "description": f"{years}+ years of {exp.get('skill', 'experience')}",
+            "years": years,
+            "skill": exp.get("skill"),
+        }
+
+        if skill_in_resume:
+            matched.append(item)
+        else:
+            missing.append(item)
+
+    # Check education
+    edu_in_resume = {
+        "bachelor": any(w in resume_lower for w in ["bachelor", "b.s.", "b.a.", "bs ", "ba "]),
+        "master": any(w in resume_lower for w in ["master", "m.s.", "m.a.", "ms ", "ma ", "mba"]),
+        "phd": any(w in resume_lower for w in ["ph.d", "phd", "doctorate"]),
+    }
+
+    for edu in requirements.get("education", []):
+        level = edu.get("level", "").lower()
+        item = {
+            "type": "education",
+            "description": f"{edu.get('level', '')} degree"
+            + (f" in {edu.get('field')}" if edu.get("field") else ""),
+            "level": edu.get("level"),
+        }
+        if edu_in_resume.get(level, False):
+            matched.append(item)
+        else:
+            missing.append(item)
+
+    # Check certifications
+    for cert in requirements.get("certifications", []):
+        cert_name = cert.get("name", "")
+        cert_lower = cert_name.lower()
+        # Check for cert or common abbreviations
+        has_cert = cert_lower in resume_lower or any(
+            abbrev in resume_lower
+            for abbrev in [
+                cert_lower.replace(" ", ""),
+                cert_lower.split()[0] if " " in cert_lower else "",
+            ]
+        )
+
+        item = {
+            "type": "certification",
+            "description": cert_name,
+            "required": cert.get("required", False),
+        }
+
+        if has_cert:
+            matched.append(item)
+        else:
+            missing.append(item)
+
+    # Check clearance
+    clearance = requirements.get("clearance")
+    if clearance:
+        clearance_terms = ["clearance", "secret", "ts/sci", "public trust"]
+        has_clearance = any(term in resume_lower for term in clearance_terms)
+
+        item = {
+            "type": "clearance",
+            "description": f"{clearance.get('level', '')} clearance",
+            "level": clearance.get("level"),
+            "must_obtain": clearance.get("must_obtain", False),
+        }
+
+        if has_clearance or clearance.get("must_obtain"):
+            matched.append(item)
+        else:
+            missing.append(item)
+
+    # Check required skills
+    for skill in requirements.get("skills_required", []):
+        skill_lower = skill.lower()
+        has_skill = skill_lower in resume_lower
+
+        item = {"type": "skill_required", "description": skill}
+
+        if has_skill:
+            matched.append(item)
+        else:
+            missing.append(item)
+
+    # Summary
+    total = len(matched) + len(missing)
+    match_pct = int((len(matched) / total) * 100) if total > 0 else 0
+
+    return {
+        "matched": matched,
+        "missing": missing,
+        "match_summary": {
+            "total_requirements": total,
+            "matched_count": len(matched),
+            "missing_count": len(missing),
+            "match_percentage": match_pct,
+            "experience_match": len([m for m in matched if m["type"] == "experience"]),
+            "skills_match": len([m for m in matched if m["type"] == "skill_required"]),
+        },
+    }
 
 
 # Comprehensive list of tech skills to detect
