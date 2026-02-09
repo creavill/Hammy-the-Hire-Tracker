@@ -201,38 +201,39 @@ export default function JobDetailPage() {
       const res = await fetch(`${API_BASE}/jobs/${jobId}`);
       if (!res.ok) throw new Error('Job not found');
       const data = await res.json();
-      setJob(data);
-      setNotes(data.notes || '');
+      const jobData = data.job || data;  // API returns {job: {...}}
+      setJob(jobData);
+      setNotes(jobData.notes || '');
 
       // Parse enrichment data
-      if (data.last_enriched) {
+      if (jobData.last_enriched) {
         setEnrichment({
           is_enriched: true,
-          salary_estimate: data.salary_estimate,
-          full_description: data.full_description,
-          last_enriched: data.last_enriched,
-          enrichment_source: data.enrichment_source,
-          salary_confidence: data.salary_confidence,
+          salary_estimate: jobData.salary_estimate,
+          full_description: jobData.full_description,
+          last_enriched: jobData.last_enriched,
+          enrichment_source: jobData.enrichment_source,
+          salary_confidence: jobData.salary_confidence,
         });
       }
 
       // Parse analysis data
       try {
         setAnalysis({
-          strengths: data.fit_pros ? JSON.parse(data.fit_pros) : [],
-          gaps: data.fit_gaps ? JSON.parse(data.fit_gaps) : [],
-          fit_score: data.fit_score,
-          recommendation: data.resume_recommendation,
-          resume_to_use: data.recommended_resume_id,
+          strengths: jobData.fit_pros ? JSON.parse(jobData.fit_pros) : [],
+          gaps: jobData.fit_gaps ? JSON.parse(jobData.fit_gaps) : [],
+          fit_score: jobData.fit_score,
+          recommendation: jobData.resume_recommendation,
+          resume_to_use: jobData.recommended_resume_id,
         });
       } catch (e) { console.error('Failed to parse analysis:', e); }
 
       // Parse hiring manager info
-      if (data.hiring_manager_info) {
+      if (jobData.hiring_manager_info) {
         try {
-          setHiringManagerInfo(typeof data.hiring_manager_info === 'string'
-            ? JSON.parse(data.hiring_manager_info)
-            : data.hiring_manager_info);
+          setHiringManagerInfo(typeof jobData.hiring_manager_info === 'string'
+            ? JSON.parse(jobData.hiring_manager_info)
+            : jobData.hiring_manager_info);
         } catch (e) { console.error('Failed to parse hiring manager info:', e); }
       }
     } catch (err) {
