@@ -18,6 +18,8 @@ from app.ai.job_analyzer import (
     analyze_job_fit,
     extract_required_skills,
     create_tech_stack_overlap,
+    extract_structured_requirements,
+    match_requirements_to_resume,
 )
 from app.filters.salary_filter import (
     parse_salary_string,
@@ -372,6 +374,20 @@ def enrich_job_data(
                         update_values["fit_score"] = fit_analysis["match_score"]
                         enriched_fields.append("fit_score")
                         result["fit_score"] = fit_analysis["match_score"]
+
+                    # NEW: Extract comprehensive structured requirements
+                    structured_reqs = extract_structured_requirements(description)
+                    if structured_reqs:
+                        update_values["structured_requirements"] = json.dumps(structured_reqs)
+                        enriched_fields.append("structured_requirements")
+                        result["structured_requirements"] = structured_reqs
+
+                        # Match requirements to resume
+                        req_match = match_requirements_to_resume(structured_reqs, resume_text)
+                        if req_match:
+                            update_values["requirements_match"] = json.dumps(req_match)
+                            enriched_fields.append("requirements_match")
+                            result["requirements_match"] = req_match
 
                     logger.info(
                         f"Job analysis complete: {len(exp_requirements)} requirements, "

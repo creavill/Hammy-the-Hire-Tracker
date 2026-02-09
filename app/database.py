@@ -344,6 +344,12 @@ def run_migrations(conn):
         conn.execute("ALTER TABLE jobs ADD COLUMN required_skills TEXT")  # JSON
         conn.execute("ALTER TABLE jobs ADD COLUMN preferred_skills TEXT")  # JSON
 
+    # Migration: Add structured requirements and match columns
+    if "structured_requirements" not in jobs_columns:
+        logger.info("Migrating database: adding structured requirements columns...")
+        conn.execute("ALTER TABLE jobs ADD COLUMN structured_requirements TEXT")  # JSON
+        conn.execute("ALTER TABLE jobs ADD COLUMN requirements_match TEXT")  # JSON
+
     # Migration: Create enhanced scan_runs table for comprehensive scan history
     try:
         conn.execute("""
